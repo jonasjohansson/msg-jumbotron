@@ -848,6 +848,11 @@ debugFolder.addBinding(params, 'showWireframe', { label: 'Room wireframe' });
 debugFolder.addBinding(params, 'showAxes', { label: 'Axes helper' });
 debugFolder.addBinding(params, 'debugWalls', { label: 'Color-code walls' });
 
+// ── Video state (declared before animate loop) ─────────────────────
+let videoTexture = null;
+let videoElement = null;
+let videoMode = false;
+
 // ── Animation Loop ──────────────────────────────────────────────────
 const clock = new THREE.Clock();
 const _lookTarget = new THREE.Vector3();
@@ -936,10 +941,6 @@ renderer.domElement.addEventListener('dblclick', () => {
 });
 
 // ── Video Drag & Drop ───────────────────────────────────────────────
-let videoTexture = null;
-let videoElement = null;
-let videoMode = false;
-
 const allScreenMats = [
     screenFront.material,
     screenBack.material,
