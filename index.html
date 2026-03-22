@@ -242,53 +242,31 @@ const edgeR = new THREE.PointLight(COLORS.knickBlue, 0.8, 12);
 edgeR.position.set(BOX.width / 2, 0.5, 0);
 innerScene.add(edgeR);
 
-// ── Bounce Sound (Tone.js) ───────────────────────────────────────────
+// ── Bounce Sound (sampled) ───────────────────────────────────────────
 let audioStarted = false;
 
-// Low body thump — the resonant air cavity of the ball
-const bodyThump = new Tone.MembraneSynth({
-    pitchDecay: 0.08,
-    octaves: 6,
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.1 },
-}).toDestination();
-bodyThump.volume.value = -6;
+// Pool of players for overlapping bounces
+const PLAYER_POOL_SIZE = 6;
+const bouncePlayers = [];
+let nextPlayer = 0;
 
-// Mid slap — the leather hitting hardwood
-const slapSynth = new Tone.MetalSynth({
-    frequency: 120,
-    envelope: { attack: 0.001, decay: 0.06, sustain: 0, release: 0.02 },
-    harmonicity: 0.1,
-    modulationIndex: 8,
-    resonance: 2000,
-    octaves: 0.5,
-}).toDestination();
-slapSynth.volume.value = -22;
-
-// High-freq contact noise — the sharp snap
-const contactNoise = new Tone.NoiseSynth({
-    noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.025, sustain: 0, release: 0.01 },
-}).toDestination();
-contactNoise.volume.value = -26;
-
-// Filtered thud for body resonance
-const filter = new Tone.Filter(200, 'lowpass', -24).toDestination();
-const bodyResonance = new Tone.NoiseSynth({
-    noise: { type: 'brown' },
-    envelope: { attack: 0.002, decay: 0.12, sustain: 0, release: 0.05 },
-}).connect(filter);
-bodyResonance.volume.value = -14;
+const bounceBuffer = new Tone.ToneAudioBuffer('bounce.mp3', () => {
+    for (let i = 0; i < PLAYER_POOL_SIZE; i++) {
+        const player = new Tone.Player(bounceBuffer).toDestination();
+        player.volume.value = -4;
+        bouncePlayers.push(player);
+    }
+});
 
 function playBounceSound() {
-    if (!audioStarted) return;
-    const now = Tone.now();
-    // Randomize pitch slightly for natural variation
-    const pitch = 80 + Math.random() * 15;
-    bodyThump.triggerAttackRelease(pitch, 0.12, now);
-    slapSynth.triggerAttackRelease(0.03, now);
-    contactNoise.triggerAttackRelease(0.02, now);
-    bodyResonance.triggerAttackRelease(0.08, now + 0.003);
+    if (!audioStarted || bouncePlayers.length === 0) return;
+    const player = bouncePlayers[nextPlayer % PLAYER_POOL_SIZE];
+    nextPlayer++;
+    // Modulate playback rate for variation (0.85–1.15x = subtle pitch shift)
+    player.playbackRate = 0.88 + Math.random() * 0.24;
+    // Slight volume variation
+    player.volume.value = -6 + Math.random() * 4;
+    player.start();
 }
 
 // Start audio on first interaction
