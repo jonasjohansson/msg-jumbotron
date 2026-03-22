@@ -913,11 +913,13 @@ function animate() {
     updateAllBalls(dt);
     controls.update();
 
-    // Render inner scene to texture
-    renderer.setRenderTarget(renderTarget);
-    renderer.render(innerScene, innerCamera);
+    // Render inner scene to texture (skip if playing video)
+    if (!videoMode) {
+        renderer.setRenderTarget(renderTarget);
+        renderer.render(innerScene, innerCamera);
+    }
 
-    // Render outer scene with bloom
+    // Render outer scene with post-processing
     renderer.setRenderTarget(null);
     composer.render();
 }
@@ -932,6 +934,110 @@ renderer.domElement.addEventListener('dblclick', () => {
         document.exitFullscreen();
     }
 });
+
+// ── Video Drag & Drop ───────────────────────────────────────────────
+let videoTexture = null;
+let videoElement = null;
+let videoMode = false;
+
+const allScreenMats = [
+    screenFront.material,
+    screenBack.material,
+    screenRight.material,
+    screenLeft.material,
+];
+
+function setScreenTexture(texture) {
+    allScreenMats.forEach(mat => { mat.map = texture; mat.needsUpdate = true; });
+}
+
+function switchToVideo(file) {
+    // Clean up previous video
+    if (videoElement) {
+        videoElement.pause();
+        videoElement.src = '';
+        videoElement.remove();
+    }
+    if (videoTexture) videoTexture.dispose();
+
+    videoElement = document.createElement('video');
+    videoElement.src = URL.createObjectURL(file);
+    videoElement.loop = true;
+    videoElement.muted = true;
+    videoElement.playsInline = true;
+    videoElement.play();
+
+    videoTexture = new THREE.VideoTexture(videoElement);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.colorSpace = THREE.SRGBColorSpace;
+
+    setScreenTexture(videoTexture);
+    videoMode = true;
+}
+
+function switchToBounce() {
+    if (videoElement) {
+        videoElement.pause();
+        videoElement.src = '';
+        videoElement.remove();
+        videoElement = null;
+    }
+    if (videoTexture) {
+        videoTexture.dispose();
+        videoTexture = null;
+    }
+    setScreenTexture(renderTarget.texture);
+    videoMode = false;
+}
+
+// Drag & drop overlay
+const dropOverlay = document.createElement('div');
+dropOverlay.style.cssText = `
+    position: fixed; inset: 0; z-index: 999;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0, 107, 182, 0.3);
+    border: 4px dashed #F58426;
+    pointer-events: none;
+`;
+dropOverlay.innerHTML = '<div style="color:#fff;font:bold 28px Arial;text-shadow:0 2px 8px #000">Drop video to play on jumbotron</div>';
+document.body.appendChild(dropOverlay);
+
+let dragCounter = 0;
+
+document.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    dropOverlay.style.display = 'flex';
+});
+
+document.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+        dragCounter = 0;
+        dropOverlay.style.display = 'none';
+    }
+});
+
+document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+});
+
+document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    dropOverlay.style.display = 'none';
+
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('video/')) {
+        switchToVideo(file);
+    }
+});
+
+// Tweakpane button to switch back
+ballFolder.addBlade({ view: 'separator' });
+ballFolder.addButton({ title: 'Back to Basketball' }).on('click', () => switchToBounce());
 </script>
 </body>
 </html>
