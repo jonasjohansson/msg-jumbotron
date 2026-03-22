@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSG Jumbotron</title>
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+        body { display: flex; align-items: center; justify-content: center; }
+        canvas { display: block; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
+import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
+
+// ── Config ──────────────────────────────────────────────────────────
+const COLORS = {
+    knickOrange: 0xF58426,
+    knickBlue:   0x006BB6,
+    knickSilver: 0xBEC0C2,
+    black:       0x000000,
+    white:       0xFFFFFF,
+    hardwood:    0xC8956C,
+};
+
+const BOX = { width: 14, height: 8, depth: 10 };
+
+const BOUNCE = {
+    xMin:           -BOX.width / 2 + 1.2,
+    xMax:            BOX.width / 2 - 1.2,
+    gravity:         9.8,
+    bounceHeight:    4.2,
+    speed:           2.5,
+    dampening:       0.92,
+    minBounceHeight: 0.8,
+};
+
+const BALL_RADIUS = 0.55;
+const SCREEN_W = 6;
+const SCREEN_H = SCREEN_W / (16 / 9);
+const JUMBOTRON_Y = 8;
+
+// ── Renderer ────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x050508);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// ════════════════════════════════════════════════════════════════════
+// INNER SCENE — basketball animation (rendered to texture)
+// ════════════════════════════════════════════════════════════════════
+
+const innerScene = new THREE.Scene();
+innerScene.background = new THREE.Color(0x020810);
+innerScene.fog = new THREE.Fog(0x020810, 2, 12);
+const innerAspect = 16 / 9;
+const innerCamera = new THREE.PerspectiveCamera(75, innerAspect, 0.1, 100);
+innerCamera.position.set(0, -5, 0.8);
+innerCamera.lookAt(0, 2.5, -0.5);
+
+const renderTarget = new THREE.WebGLRenderTarget(2048, 1152, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+});
+
+// ── Inner: Room ─────────────────────────────────────────────────────
+
+// Floor
+const floorMat = new THREE.MeshStandardMaterial({ color: COLORS.hardwood, roughness: 0.7 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, BOX.depth), floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+innerScene.add(floor);
+
+// Court lines
+const lineMat = new THREE.MeshBasicMaterial({ color: COLORS.knickOrange, side: THREE.DoubleSide });
+const centerCircle = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.0, 64), lineMat);
+centerCircle.rotation.x = -Math.PI / 2;
+centerCircle.position.y = 0.01;
+innerScene.add(centerCircle);
+
+const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, 0.05), lineMat);
+centerLine.rotation.x = -Math.PI / 2;
+centerLine.position.y = 0.01;
+innerScene.add(centerLine);
+
+// Three-point arcs (left and right)
+const arcShape = new THREE.Shape();
+arcShape.absarc(0, 0, 2.2, -Math.PI * 0.4, Math.PI * 0.4, false);
+const arcPoints = arcShape.getPoints(32);
+const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
+const arcLineMat = new THREE.LineBasicMaterial({ color: COLORS.knickOrange });
+const arcLeft = new THREE.Line(arcGeo, arcLineMat);
+arcLeft.rotation.x = -Math.PI / 2;
+arcLeft.rotation.z = Math.PI / 2;
+arcLeft.position.set(-BOX.width / 2 + 0.5, 0.02, 0);
+innerScene.add(arcLeft);
+const arcRight = arcLeft.clone();
+arcRight.rotation.z = -Math.PI / 2;
+arcRight.position.set(BOX.width / 2 - 0.5, 0.02, 0);
+innerScene.add(arcRight);
+
+// "KNICKS" on the court
+const brandCanvas = document.createElement('canvas');
+brandCanvas.width = 1024;
+brandCanvas.height = 512;
+const bCtx = brandCanvas.getContext('2d');
+bCtx.fillStyle = '#C8956C';
+bCtx.fillRect(0, 0, 1024, 512);
+// Outer ring
+bCtx.beginPath();
+bCtx.arc(512, 256, 200, 0, Math.PI * 2);
+bCtx.lineWidth = 6;
+bCtx.strokeStyle = '#006BB6';
+bCtx.stroke();
+// Text
+bCtx.fillStyle = '#006BB6';
+bCtx.font = 'bold 120px Arial, sans-serif';
+bCtx.textAlign = 'center';
+bCtx.textBaseline = 'middle';
+bCtx.fillText('KNICKS', 512, 220);
+bCtx.font = 'bold 50px Arial, sans-serif';
+bCtx.fillStyle = '#F58426';
+bCtx.fillText('NEW YORK', 512, 320);
+
+const brandTexture = new THREE.CanvasTexture(brandCanvas);
+const brandMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(4, 2),
+    new THREE.MeshStandardMaterial({ map: brandTexture })
+);
+brandMesh.rotation.x = -Math.PI / 2;
+brandMesh.position.set(0, 0.006, 0);
+innerScene.add(brandMesh);
+
+// Walls — distinct debug colors so you can see each one
+const backWallMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
+const leftWallMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
+const rightWallMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
+
+const backWall = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, BOX.height), backWallMat);
+backWall.position.set(0, BOX.height / 2, -BOX.depth / 2);
+innerScene.add(backWall);
+
+const sideWallGeo = new THREE.PlaneGeometry(BOX.depth, BOX.height);
+const leftWall = new THREE.Mesh(sideWallGeo, leftWallMat);
+leftWall.position.set(-BOX.width / 2, BOX.height / 2, 0);
+leftWall.rotation.y = Math.PI / 2;
+innerScene.add(leftWall);
+
+const rightWall = new THREE.Mesh(sideWallGeo, rightWallMat);
+rightWall.position.set(BOX.width / 2, BOX.height / 2, 0);
+rightWall.rotation.y = -Math.PI / 2;
+innerScene.add(rightWall);
+
+// Ceiling
+const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, BOX.depth), ceilingMat);
+ceiling.rotation.x = Math.PI / 2;
+ceiling.position.y = BOX.height;
+innerScene.add(ceiling);
+
+// Debug: wireframe box showing room bounds
+const roomWireframe = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(BOX.width, BOX.height, BOX.depth)),
+    new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.4 })
+);
+roomWireframe.position.y = BOX.height / 2;
+roomWireframe.visible = false;
+innerScene.add(roomWireframe);
+
+// Debug: axes helper at room center
+const axesHelper = new THREE.AxesHelper(2);
+axesHelper.position.y = 0.05;
+axesHelper.visible = false;
+innerScene.add(axesHelper);
+
+// ── Inner: Lighting ─────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(COLORS.white, 1.2);
+innerScene.add(ambientLight);
+
+// Overhead spot — lights the floor
+const spotlight = new THREE.SpotLight(COLORS.white, 2.5, 30, Math.PI / 3, 0.4);
+spotlight.position.set(0, BOX.height + 2, 0);
+spotlight.target.position.set(0, 0, 0);
+spotlight.castShadow = true;
+spotlight.shadow.mapSize.set(1024, 1024);
+innerScene.add(spotlight);
+innerScene.add(spotlight.target);
+
+// Front fill — lights from viewer direction
+const frontFill = new THREE.PointLight(COLORS.white, 1.5, 20);
+frontFill.position.set(0, -3, 1);
+innerScene.add(frontFill);
+
+// Back wall light
+const backLight = new THREE.PointLight(COLORS.white, 1.5, 20);
+backLight.position.set(0, BOX.height / 2, -BOX.depth / 2 + 2);
+innerScene.add(backLight);
+
+// Left wall light
+const leftLight = new THREE.PointLight(COLORS.white, 1.2, 20);
+leftLight.position.set(-BOX.width / 2 + 2, BOX.height / 2, 0);
+innerScene.add(leftLight);
+
+// Right wall light
+const rightLight = new THREE.PointLight(COLORS.white, 1.2, 20);
+rightLight.position.set(BOX.width / 2 - 2, BOX.height / 2, 0);
+innerScene.add(rightLight);
+
+// Ceiling light
+const ceilingLight = new THREE.PointLight(COLORS.white, 1.0, 20);
+ceilingLight.position.set(0, BOX.height - 1, 0);
+innerScene.add(ceilingLight);
+
+// Blue edge accents
+const edgeL = new THREE.PointLight(COLORS.knickBlue, 0.8, 12);
+edgeL.position.set(-BOX.width / 2, 0.5, 0);
+innerScene.add(edgeL);
+const edgeR = new THREE.PointLight(COLORS.knickBlue, 0.8, 12);
+edgeR.position.set(BOX.width / 2, 0.5, 0);
+innerScene.add(edgeR);
+
+// ── Bounce Sound (Tone.js) ───────────────────────────────────────────
+let audioStarted = false;
+
+// Low body thump — the resonant air cavity of the ball
+const bodyThump = new Tone.MembraneSynth({
+    pitchDecay: 0.08,
+    octaves: 6,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.1 },
+}).toDestination();
+bodyThump.volume.value = -6;
+
+// Mid slap — the leather hitting hardwood
+const slapSynth = new Tone.MetalSynth({
+    frequency: 120,
+    envelope: { attack: 0.001, decay: 0.06, sustain: 0, release: 0.02 },
+    harmonicity: 0.1,
+    modulationIndex: 8,
+    resonance: 2000,
+    octaves: 0.5,
+}).toDestination();
+slapSynth.volume.value = -22;
+
+// High-freq contact noise — the sharp snap
+const contactNoise = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.025, sustain: 0, release: 0.01 },
+}).toDestination();
+contactNoise.volume.value = -26;
+
+// Filtered thud for body resonance
+const filter = new Tone.Filter(200, 'lowpass', -24).toDestination();
+const bodyResonance = new Tone.NoiseSynth({
+    noise: { type: 'brown' },
+    envelope: { attack: 0.002, decay: 0.12, sustain: 0, release: 0.05 },
+}).connect(filter);
+bodyResonance.volume.value = -14;
+
+function playBounceSound() {
+    if (!audioStarted) return;
+    const now = Tone.now();
+    // Randomize pitch slightly for natural variation
+    const pitch = 80 + Math.random() * 15;
+    bodyThump.triggerAttackRelease(pitch, 0.12, now);
+    slapSynth.triggerAttackRelease(0.03, now);
+    contactNoise.triggerAttackRelease(0.02, now);
+    bodyResonance.triggerAttackRelease(0.08, now + 0.003);
+}
+
+// Start audio on first interaction
+async function startAudio() {
+    if (!audioStarted) {
+        await Tone.start();
+        audioStarted = true;
+    }
+}
+document.addEventListener('click', startAudio);
+document.addEventListener('pointerdown', startAudio);
+
+// ── Inner: Multi-Ball System ─────────────────────────────────────────
+const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
+const ballBaseMat = new THREE.MeshStandardMaterial({ color: COLORS.knickOrange, roughness: 0.7, metalness: 0.15 });
+const seamMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+const shadowBaseMat = new THREE.MeshBasicMaterial({ color: COLORS.black, transparent: true, opacity: 0.4 });
+const shadowGeo = new THREE.CircleGeometry(0.6, 32);
+
+const PARTICLE_COUNT_PER = 40;
+
+const balls = []; // array of ball objects
+
+function createBallObject() {
+    // Mesh
+    const mesh = new THREE.Mesh(ballGeo, ballBaseMat.clone());
+    mesh.castShadow = true;
+    innerScene.add(mesh);
+
+    // Seams
+    [[0,0,0],[Math.PI/2,0,0],[0,Math.PI/2,0]].forEach(([rx,ry,rz]) => {
+        const seam = new THREE.Mesh(
+            new THREE.TorusGeometry(BALL_RADIUS + 0.005, 0.012, 8, 64),
+            seamMat
+        );
+        seam.rotation.set(rx, ry, rz);
+        mesh.add(seam);
+    });
+
+    // Shadow
+    const sMat = shadowBaseMat.clone();
+    const shadow = new THREE.Mesh(shadowGeo, sMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.01;
+    innerScene.add(shadow);
+
+    // Particles
+    const pPositions = new Float32Array(PARTICLE_COUNT_PER * 3);
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+    const pMat = new THREE.PointsMaterial({
+        color: COLORS.knickOrange,
+        size: 0.08,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        sizeAttenuation: true,
+    });
+    const pPoints = new THREE.Points(pGeo, pMat);
+    innerScene.add(pPoints);
+    const pVelocities = [];
+    for (let i = 0; i < PARTICLE_COUNT_PER; i++) pVelocities.push(new THREE.Vector3());
+
+    // Impact ring
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: COLORS.knickOrange, transparent: true, opacity: 0, side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.4, 32), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.02;
+    innerScene.add(ring);
+
+    // Randomize start position and timing
+    const startX = BOUNCE.xMin + Math.random() * (BOUNCE.xMax - BOUNCE.xMin);
+    const startY = 1 + Math.random() * BOUNCE.bounceHeight;
+    const dir = Math.random() > 0.5 ? 1 : -1;
+
+    const obj = {
+        mesh,
+        shadow, sMat,
+        pGeo, pMat, pPositions, pVelocities, pLife: 0,
+        ring, ringMat, ringLife: 0,
+        state: {
+            x: startX, y: startY, vy: 0,
+            direction: dir,
+            currentBounceHeight: BOUNCE.bounceHeight,
+            spinAngle: Math.random() * Math.PI * 2,
+            prevY: startY,
+            squash: 0,
+        },
+    };
+
+    mesh.position.set(startX, startY, 0);
+    shadow.position.x = startX;
+
+    balls.push(obj);
+    return obj;
+}
+
+function removeBallObject() {
+    if (balls.length <= 1) return;
+    const obj = balls.pop();
+    innerScene.remove(obj.mesh);
+    innerScene.remove(obj.shadow);
+    innerScene.remove(obj.ring);
+    // Remove particles Points
+    obj.pGeo.dispose();
+    obj.pMat.dispose();
+    innerScene.remove(innerScene.children.find(c => c.geometry === obj.pGeo) || obj.mesh);
+    // Find and remove the Points object
+    for (let i = innerScene.children.length - 1; i >= 0; i--) {
+        if (innerScene.children[i].material === obj.pMat) {
+            innerScene.remove(innerScene.children[i]);
+            break;
+        }
+    }
+}
+
+function spawnParticles(obj, x) {
+    obj.pLife = 1.0;
+    for (let i = 0; i < PARTICLE_COUNT_PER; i++) {
+        obj.pPositions[i * 3] = x;
+        obj.pPositions[i * 3 + 1] = BALL_RADIUS;
+        obj.pPositions[i * 3 + 2] = 0;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1.5 + Math.random() * 4;
+        obj.pVelocities[i].set(
+            Math.cos(angle) * speed,
+            Math.random() * 3 + 1,
+            Math.sin(angle) * speed * 0.5
+        );
+    }
+    obj.pGeo.attributes.position.needsUpdate = true;
+}
+
+function updateBallObject(obj, dt) {
+    const s = obj.state;
+    s.prevY = s.y;
+    s.x += BOUNCE.speed * s.direction * dt;
+
+    if (s.x > BOUNCE.xMax) {
+        s.x = BOUNCE.xMax;
+        s.direction = -1;
+        s.currentBounceHeight = BOUNCE.bounceHeight;
+    } else if (s.x < BOUNCE.xMin) {
+        s.x = BOUNCE.xMin;
+        s.direction = 1;
+        s.currentBounceHeight = BOUNCE.bounceHeight;
+    }
+
+    s.vy -= BOUNCE.gravity * dt;
+    s.y += s.vy * dt;
+
+    if (s.y <= BALL_RADIUS && s.vy < 0) {
+        const impactSpeed = -s.vy; // how fast it was going when it hit
+        s.y = BALL_RADIUS;
+        s.currentBounceHeight *= BOUNCE.dampening;
+        if (s.currentBounceHeight < BOUNCE.minBounceHeight)
+            s.currentBounceHeight = BOUNCE.minBounceHeight;
+        s.vy = Math.sqrt(2 * BOUNCE.gravity * s.currentBounceHeight);
+
+        if (impactSpeed > 0.3) {
+            s.squash = 1.0;
+            spawnParticles(obj, s.x);
+            obj.ringLife = 1.0;
+            obj.ring.position.x = s.x;
+            obj.ring.scale.set(1, 1, 1);
+            playBounceSound();
+        }
+    }
+
+    // Squash/stretch
+    s.squash *= 0.85;
+    const sq = s.squash * 0.35;
+    const sy = 1 - sq;
+    const sxz = 1 + sq * 0.5;
+    const r = params.ballRadius / BALL_RADIUS;
+
+    s.spinAngle += s.direction * dt * 5;
+    obj.mesh.rotation.z = s.spinAngle;
+    obj.mesh.position.x = s.x;
+    obj.mesh.position.y = s.y;
+    obj.mesh.scale.set(sxz * r, sy * r, sxz * r);
+
+    // Shadow
+    obj.shadow.position.x = s.x;
+    const hRatio = Math.max(0, 1 - s.y / BOUNCE.bounceHeight);
+    const sc = 0.5 + hRatio * 0.5;
+    obj.shadow.scale.set(sc, sc, sc);
+    obj.sMat.opacity = 0.15 + hRatio * 0.35;
+
+    // Particles
+    if (obj.pLife > 0) {
+        obj.pLife -= dt * 2.5;
+        obj.pMat.opacity = Math.max(0, obj.pLife * 0.8);
+        for (let i = 0; i < PARTICLE_COUNT_PER; i++) {
+            obj.pVelocities[i].y -= 9.8 * dt;
+            obj.pPositions[i * 3]     += obj.pVelocities[i].x * dt;
+            obj.pPositions[i * 3 + 1] += obj.pVelocities[i].y * dt;
+            obj.pPositions[i * 3 + 2] += obj.pVelocities[i].z * dt;
+        }
+        obj.pGeo.attributes.position.needsUpdate = true;
+    }
+
+    // Impact ring
+    if (obj.ringLife > 0) {
+        obj.ringLife -= dt * 3;
+        obj.ringMat.opacity = Math.max(0, obj.ringLife * 0.6);
+        const rs = 1 + (1 - obj.ringLife) * 4;
+        obj.ring.scale.set(rs, rs, rs);
+    }
+}
+
+function updateAllBalls(dt) {
+    for (const b of balls) updateBallObject(b, dt);
+}
+
+// Create the first ball
+createBallObject();
+
+// ════════════════════════════════════════════════════════════════════
+// OUTER SCENE — arena with jumbotron
+// ════════════════════════════════════════════════════════════════════
+
+const arenaScene = new THREE.Scene();
+arenaScene.fog = new THREE.FogExp2(0x0a0a10, 0.012);
+
+const arenaCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+arenaCamera.position.set(0, 2, 18);
+
+const controls = new OrbitControls(arenaCamera, renderer.domElement);
+controls.target.set(0, JUMBOTRON_Y, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 5;
+controls.maxDistance = 50;
+controls.update();
+
+// ── Arena: Floor (reflective court) ─────────────────────────────────
+const arenaFloorMat = new THREE.MeshStandardMaterial({
+    color: 0xB8864E,
+    roughness: 0.6,
+    metalness: 0.15,
+});
+const arenaFloor = new THREE.Mesh(new THREE.PlaneGeometry(60, 40), arenaFloorMat);
+arenaFloor.rotation.x = -Math.PI / 2;
+arenaScene.add(arenaFloor);
+
+// Court markings on arena floor
+const courtLineMat2 = new THREE.MeshBasicMaterial({ color: COLORS.knickOrange });
+const arenaCircle = new THREE.Mesh(new THREE.RingGeometry(1.8, 1.95, 64), courtLineMat2);
+arenaCircle.rotation.x = -Math.PI / 2;
+arenaCircle.position.y = 0.01;
+arenaScene.add(arenaCircle);
+
+// Half-court line
+const halfLine = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.08, 20),
+    courtLineMat2
+);
+halfLine.rotation.x = -Math.PI / 2;
+halfLine.position.y = 0.01;
+arenaScene.add(halfLine);
+
+// Court boundary
+const courtBound = new THREE.Mesh(
+    new THREE.RingGeometry(14.5, 14.6, 4),
+    new THREE.MeshBasicMaterial({ color: COLORS.knickOrange, side: THREE.DoubleSide })
+);
+courtBound.rotation.x = -Math.PI / 2;
+courtBound.position.y = 0.01;
+arenaScene.add(courtBound);
+
+// ── Arena: Seating bowl ─────────────────────────────────────────────
+const tierMat = new THREE.MeshStandardMaterial({ color: 0x1a2744, roughness: 0.9 });
+const tierRows = 8;
+for (let row = 0; row < tierRows; row++) {
+    const innerR = 18 + row * 2.5;
+    const outerR = innerR + 2.2;
+    const tierHeight = 1 + row * 1.5;
+    const tierGeo = new THREE.RingGeometry(innerR, outerR, 48);
+    const tierMesh = new THREE.Mesh(tierGeo, tierMat);
+    tierMesh.rotation.x = -Math.PI / 2;
+    tierMesh.position.y = tierHeight;
+    arenaScene.add(tierMesh);
+
+    // Vertical face
+    if (row === 0) continue;
+    const faceMat = new THREE.MeshStandardMaterial({ color: 0x12203a });
+    const faceGeo = new THREE.CylinderGeometry(innerR, innerR, tierHeight - (1 + (row - 1) * 1.5), 48, 1, true);
+    const face = new THREE.Mesh(faceGeo, faceMat);
+    face.position.y = (tierHeight + (1 + (row - 1) * 1.5)) / 2;
+    arenaScene.add(face);
+}
+
+// ── Arena: Jumbotron ────────────────────────────────────────────────
+const jumbotronGroup = new THREE.Group();
+jumbotronGroup.position.y = JUMBOTRON_Y;
+arenaScene.add(jumbotronGroup);
+
+const screenMat = new THREE.MeshBasicMaterial({ map: renderTarget.texture });
+
+const frameW = SCREEN_W + 0.4;
+const frameH = SCREEN_H + 0.4;
+const frameD = SCREEN_W + 0.4;
+const frameMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.3 });
+const frameBox = new THREE.Mesh(new THREE.BoxGeometry(frameW, frameH, frameD), frameMat);
+jumbotronGroup.add(frameBox);
+
+// 4 screens
+const screenGeo = new THREE.PlaneGeometry(SCREEN_W, SCREEN_H);
+
+const screenFront = new THREE.Mesh(screenGeo, screenMat);
+screenFront.position.z = frameD / 2 + 0.01;
+jumbotronGroup.add(screenFront);
+
+const screenBack = new THREE.Mesh(screenGeo, screenMat.clone());
+screenBack.position.z = -frameD / 2 - 0.01;
+screenBack.rotation.y = Math.PI;
+jumbotronGroup.add(screenBack);
+
+const screenRight = new THREE.Mesh(screenGeo, screenMat.clone());
+screenRight.position.x = frameW / 2 + 0.01;
+screenRight.rotation.y = Math.PI / 2;
+jumbotronGroup.add(screenRight);
+
+const screenLeft = new THREE.Mesh(screenGeo, screenMat.clone());
+screenLeft.position.x = -frameW / 2 - 0.01;
+screenLeft.rotation.y = -Math.PI / 2;
+jumbotronGroup.add(screenLeft);
+
+// Suspension cables
+const cableMat = new THREE.MeshBasicMaterial({ color: 0x444444 });
+const cableGeo = new THREE.CylinderGeometry(0.04, 0.04, 14, 8);
+[[-2.5, 2.5], [2.5, 2.5], [-2.5, -2.5], [2.5, -2.5]].forEach(([x, z]) => {
+    const cable = new THREE.Mesh(cableGeo, cableMat);
+    cable.position.set(x, frameH / 2 + 7, z);
+    jumbotronGroup.add(cable);
+});
+
+// Simple trim strips (static)
+const trimMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5 });
+const trimTop = new THREE.Mesh(new THREE.BoxGeometry(frameW + 0.2, 0.12, frameD + 0.2), trimMat);
+trimTop.position.y = frameH / 2;
+jumbotronGroup.add(trimTop);
+const trimBot = new THREE.Mesh(new THREE.BoxGeometry(frameW + 0.2, 0.12, frameD + 0.2), trimMat);
+trimBot.position.y = -frameH / 2;
+jumbotronGroup.add(trimBot);
+
+// ── Arena: Lighting (well-lit stadium) ──────────────────────────────
+arenaScene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+// Multiple overhead arena lights
+const arenaSpot1 = new THREE.SpotLight(0xffffff, 2.0, 80, Math.PI / 4, 0.5);
+arenaSpot1.position.set(0, 30, 0);
+arenaScene.add(arenaSpot1);
+
+const arenaSpot2 = new THREE.SpotLight(0xffffff, 1.0, 60, Math.PI / 3, 0.6);
+arenaSpot2.position.set(15, 25, 15);
+arenaScene.add(arenaSpot2);
+
+const arenaSpot3 = new THREE.SpotLight(0xffffff, 1.0, 60, Math.PI / 3, 0.6);
+arenaSpot3.position.set(-15, 25, -15);
+arenaScene.add(arenaSpot3);
+
+// Screen glow
+const screenGlow = new THREE.PointLight(0xaaccff, 1.0, 15);
+screenGlow.position.set(0, JUMBOTRON_Y, 0);
+arenaScene.add(screenGlow);
+
+// ── Post-processing (bloom) ─────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(arenaScene, arenaCamera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.4,  // strength
+    0.6,  // radius
+    0.85  // threshold
+);
+composer.addPass(bloomPass);
+
+// ── Resize ──────────────────────────────────────────────────────────
+function onResize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    composer.setSize(w, h);
+    arenaCamera.aspect = w / h;
+    arenaCamera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+// ── Tweakpane ───────────────────────────────────────────────────────
+const params = {
+    camX: innerCamera.position.x,
+    camY: innerCamera.position.y,
+    camZ: innerCamera.position.z,
+    lookX: 0, lookY: 2.5, lookZ: -0.5,
+    fov: innerCamera.fov,
+    ballRadius: BALL_RADIUS,
+    bounceHeight: BOUNCE.bounceHeight,
+    speed: BOUNCE.speed,
+    bloom: bloomPass.strength,
+    bloomRadius: bloomPass.radius,
+    fogNear: innerScene.fog.near,
+    fogFar: innerScene.fog.far,
+    ambient: ambientLight.intensity,
+    overhead: spotlight.intensity,
+    frontFill: frontFill.intensity,
+    backWall: backLight.intensity,
+    leftWall: leftLight.intensity,
+    rightWall: rightLight.intensity,
+    ceilingLt: ceilingLight.intensity,
+    blueEdge: edgeL.intensity,
+    showWireframe: false,
+    showAxes: false,
+    debugWalls: false,
+};
+
+const pane = new Pane({ title: 'Jumbotron Controls' });
+
+const camFolder = pane.addFolder({ title: 'Inner Camera' });
+camFolder.addBinding(params, 'camX', { min: -10, max: 10, step: 0.1, label: 'Pos X' });
+camFolder.addBinding(params, 'camY', { min: -10, max: 10, step: 0.1, label: 'Pos Y' });
+camFolder.addBinding(params, 'camZ', { min: -5, max: 15, step: 0.1, label: 'Pos Z' });
+camFolder.addBinding(params, 'lookX', { min: -10, max: 10, step: 0.1, label: 'Look X' });
+camFolder.addBinding(params, 'lookY', { min: -5, max: 10, step: 0.1, label: 'Look Y' });
+camFolder.addBinding(params, 'lookZ', { min: -10, max: 10, step: 0.1, label: 'Look Z' });
+camFolder.addBinding(params, 'fov', { min: 20, max: 120, step: 1, label: 'FOV' });
+
+const ballFolder = pane.addFolder({ title: 'Ball' });
+ballFolder.addBinding(params, 'ballRadius', { min: 0.2, max: 1.5, step: 0.05, label: 'Radius' });
+ballFolder.addBinding(params, 'bounceHeight', { min: 1, max: 7, step: 0.1, label: 'Bounce H' });
+ballFolder.addBinding(params, 'speed', { min: 0.5, max: 6, step: 0.1, label: 'Speed' });
+
+ballFolder.addBlade({ view: 'separator' });
+ballFolder.addButton({ title: 'Add Ball' }).on('click', () => createBallObject());
+ballFolder.addButton({ title: 'Remove Ball' }).on('click', () => removeBallObject());
+
+const lightFolder = pane.addFolder({ title: 'Lighting' });
+lightFolder.addBinding(params, 'ambient', { min: 0, max: 3, step: 0.1, label: 'Ambient' });
+lightFolder.addBinding(params, 'overhead', { min: 0, max: 5, step: 0.1, label: 'Overhead' });
+lightFolder.addBinding(params, 'frontFill', { min: 0, max: 4, step: 0.1, label: 'Front fill' });
+lightFolder.addBinding(params, 'backWall', { min: 0, max: 4, step: 0.1, label: 'Back wall' });
+lightFolder.addBinding(params, 'leftWall', { min: 0, max: 4, step: 0.1, label: 'Left wall' });
+lightFolder.addBinding(params, 'rightWall', { min: 0, max: 4, step: 0.1, label: 'Right wall' });
+lightFolder.addBinding(params, 'ceilingLt', { min: 0, max: 4, step: 0.1, label: 'Ceiling' });
+lightFolder.addBinding(params, 'blueEdge', { min: 0, max: 3, step: 0.1, label: 'Blue edge' });
+
+const fxFolder = pane.addFolder({ title: 'Effects' });
+fxFolder.addBinding(params, 'bloom', { min: 0, max: 2, step: 0.05, label: 'Bloom' });
+fxFolder.addBinding(params, 'bloomRadius', { min: 0, max: 2, step: 0.05, label: 'Bloom Radius' });
+fxFolder.addBinding(params, 'fogNear', { min: 0, max: 30, step: 0.5, label: 'Fog Near' });
+fxFolder.addBinding(params, 'fogFar', { min: 2, max: 50, step: 0.5, label: 'Fog Far' });
+
+const debugFolder = pane.addFolder({ title: 'Debug', expanded: false });
+debugFolder.addBinding(params, 'showWireframe', { label: 'Room wireframe' });
+debugFolder.addBinding(params, 'showAxes', { label: 'Axes helper' });
+debugFolder.addBinding(params, 'debugWalls', { label: 'Color-code walls' });
+
+// ── Animation Loop ──────────────────────────────────────────────────
+const clock = new THREE.Clock();
+const _lookTarget = new THREE.Vector3();
+let elapsed = 0;
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    let dt = clock.getDelta();
+    if (dt > 0.05) dt = 0.05;
+    elapsed += dt;
+
+    // Tweakpane → inner camera
+    innerCamera.position.set(params.camX, params.camY, params.camZ);
+    _lookTarget.set(params.lookX, params.lookY, params.lookZ);
+    innerCamera.lookAt(_lookTarget);
+    if (innerCamera.fov !== params.fov) {
+        innerCamera.fov = params.fov;
+        innerCamera.updateProjectionMatrix();
+    }
+    BOUNCE.bounceHeight = params.bounceHeight;
+    BOUNCE.speed = params.speed;
+    bloomPass.strength = params.bloom;
+    bloomPass.radius = params.bloomRadius;
+    innerScene.fog.near = params.fogNear;
+    innerScene.fog.far = params.fogFar;
+
+    // Lighting
+    ambientLight.intensity = params.ambient;
+    spotlight.intensity = params.overhead;
+    frontFill.intensity = params.frontFill;
+    backLight.intensity = params.backWall;
+    leftLight.intensity = params.leftWall;
+    rightLight.intensity = params.rightWall;
+    ceilingLight.intensity = params.ceilingLt;
+    edgeL.intensity = params.blueEdge;
+    edgeR.intensity = params.blueEdge;
+
+    // Debug visuals
+    roomWireframe.visible = params.showWireframe;
+    axesHelper.visible = params.showAxes;
+    if (params.debugWalls) {
+        backWallMat.color.setHex(0x2a0000);  // red tint
+        leftWallMat.color.setHex(0x002a00);  // green tint
+        rightWallMat.color.setHex(0x00002a); // blue tint
+        ceilingMat.color.setHex(0x2a2a00);   // yellow tint
+    } else {
+        backWallMat.color.setHex(0x0a1a3a);
+        leftWallMat.color.setHex(0x0a1a3a);
+        rightWallMat.color.setHex(0x0a1a3a);
+        ceilingMat.color.setHex(0x0a1a3a);
+    }
+
+    updateAllBalls(dt);
+    controls.update();
+
+    // Render inner scene to texture
+    renderer.setRenderTarget(renderTarget);
+    renderer.render(innerScene, innerCamera);
+
+    // Render outer scene with bloom
+    renderer.setRenderTarget(null);
+    composer.render();
+}
+
+animate();
+
+// ── Fullscreen Toggle ───────────────────────────────────────────────
+renderer.domElement.addEventListener('dblclick', () => {
+    if (!document.fullscreenElement) {
+        renderer.domElement.requestFullscreen();
+    } else {
+        document.exitFullscreen();
+    }
+});
+</script>
+</body>
+</html>
