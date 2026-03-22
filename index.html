@@ -26,6 +26,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { GammaCorrectionShader } from 'three/addons/shaders/GammaCorrectionShader.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
 
@@ -194,7 +197,7 @@ axesHelper.visible = false;
 innerScene.add(axesHelper);
 
 // ── Inner: Lighting ─────────────────────────────────────────────────
-const ambientLight = new THREE.AmbientLight(COLORS.white, 1.2);
+const ambientLight = new THREE.AmbientLight(COLORS.white, 5);
 innerScene.add(ambientLight);
 
 // Overhead spot — lights the floor
@@ -657,18 +660,93 @@ const screenGlow = new THREE.PointLight(0xaaccff, 1.0, 15);
 screenGlow.position.set(0, JUMBOTRON_Y, 0);
 arenaScene.add(screenGlow);
 
-// ── Post-processing (bloom) ─────────────────────────────────────────
+// ── Post-processing ─────────────────────────────────────────────────
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(arenaScene, arenaCamera);
 composer.addPass(renderPass);
 
+// Bloom — screen glow, ball highlights
 const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.4,  // strength
-    0.6,  // radius
-    0.85  // threshold
+    0.6,   // strength
+    0.8,   // radius
+    0.75   // threshold
 );
 composer.addPass(bloomPass);
+
+// Vignette + Film Grain + Chromatic Aberration + Color Grade — custom shader
+const cinemaShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        time: { value: 0 },
+        vignetteAmount: { value: 0.35 },
+        vignetteFalloff: { value: 0.5 },
+        grainAmount: { value: 0.06 },
+        chromaticAberration: { value: 0.003 },
+        saturation: { value: 1.15 },
+        contrast: { value: 1.08 },
+        brightness: { value: 0.02 },
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float time;
+        uniform float vignetteAmount;
+        uniform float vignetteFalloff;
+        uniform float grainAmount;
+        uniform float chromaticAberration;
+        uniform float saturation;
+        uniform float contrast;
+        uniform float brightness;
+        varying vec2 vUv;
+
+        // Film grain
+        float rand(vec2 co) {
+            return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        void main() {
+            vec2 uv = vUv;
+
+            // Chromatic aberration
+            vec2 dir = uv - 0.5;
+            float dist = length(dir);
+            vec2 offset = dir * chromaticAberration * dist;
+            float r = texture2D(tDiffuse, uv + offset).r;
+            float g = texture2D(tDiffuse, uv).g;
+            float b = texture2D(tDiffuse, uv - offset).b;
+            vec3 color = vec3(r, g, b);
+
+            // Brightness + Contrast
+            color = (color + brightness) * contrast;
+
+            // Saturation
+            float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            color = mix(vec3(luma), color, saturation);
+
+            // Vignette
+            float vig = 1.0 - smoothstep(vignetteFalloff, vignetteFalloff + vignetteAmount, dist * 1.4);
+            color *= vig;
+
+            // Film grain
+            float grain = rand(uv * time) * grainAmount;
+            color += grain - grainAmount * 0.5;
+
+            gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+        }
+    `,
+};
+const cinemaPass = new ShaderPass(cinemaShader);
+composer.addPass(cinemaPass);
+
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
 
 // ── Resize ──────────────────────────────────────────────────────────
 function onResize() {
@@ -695,9 +773,17 @@ const params = {
     speed: BOUNCE.speed,
     bloom: bloomPass.strength,
     bloomRadius: bloomPass.radius,
+    bloomThreshold: bloomPass.threshold,
+    vignette: cinemaShader.uniforms.vignetteAmount.value,
+    vignetteFalloff: cinemaShader.uniforms.vignetteFalloff.value,
+    grain: cinemaShader.uniforms.grainAmount.value,
+    chromatic: cinemaShader.uniforms.chromaticAberration.value,
+    saturation: cinemaShader.uniforms.saturation.value,
+    contrast: cinemaShader.uniforms.contrast.value,
+    brightness: cinemaShader.uniforms.brightness.value,
     fogNear: innerScene.fog.near,
     fogFar: innerScene.fog.far,
-    ambient: ambientLight.intensity,
+    ambient: 5,
     overhead: spotlight.intensity,
     frontFill: frontFill.intensity,
     backWall: backLight.intensity,
@@ -731,7 +817,7 @@ ballFolder.addButton({ title: 'Add Ball' }).on('click', () => createBallObject()
 ballFolder.addButton({ title: 'Remove Ball' }).on('click', () => removeBallObject());
 
 const lightFolder = pane.addFolder({ title: 'Lighting' });
-lightFolder.addBinding(params, 'ambient', { min: 0, max: 3, step: 0.1, label: 'Ambient' });
+lightFolder.addBinding(params, 'ambient', { min: 0, max: 10, step: 0.1, label: 'Ambient' });
 lightFolder.addBinding(params, 'overhead', { min: 0, max: 5, step: 0.1, label: 'Overhead' });
 lightFolder.addBinding(params, 'frontFill', { min: 0, max: 4, step: 0.1, label: 'Front fill' });
 lightFolder.addBinding(params, 'backWall', { min: 0, max: 4, step: 0.1, label: 'Back wall' });
@@ -740,9 +826,20 @@ lightFolder.addBinding(params, 'rightWall', { min: 0, max: 4, step: 0.1, label: 
 lightFolder.addBinding(params, 'ceilingLt', { min: 0, max: 4, step: 0.1, label: 'Ceiling' });
 lightFolder.addBinding(params, 'blueEdge', { min: 0, max: 3, step: 0.1, label: 'Blue edge' });
 
-const fxFolder = pane.addFolder({ title: 'Effects' });
-fxFolder.addBinding(params, 'bloom', { min: 0, max: 2, step: 0.05, label: 'Bloom' });
+const fxFolder = pane.addFolder({ title: 'Post FX' });
+fxFolder.addBinding(params, 'bloom', { min: 0, max: 3, step: 0.05, label: 'Bloom' });
 fxFolder.addBinding(params, 'bloomRadius', { min: 0, max: 2, step: 0.05, label: 'Bloom Radius' });
+fxFolder.addBinding(params, 'bloomThreshold', { min: 0, max: 1.5, step: 0.05, label: 'Bloom Thresh' });
+fxFolder.addBlade({ view: 'separator' });
+fxFolder.addBinding(params, 'vignette', { min: 0, max: 1, step: 0.01, label: 'Vignette' });
+fxFolder.addBinding(params, 'vignetteFalloff', { min: 0, max: 1, step: 0.01, label: 'Vig. Falloff' });
+fxFolder.addBinding(params, 'grain', { min: 0, max: 0.2, step: 0.005, label: 'Film Grain' });
+fxFolder.addBinding(params, 'chromatic', { min: 0, max: 0.02, step: 0.001, label: 'Chromatic Ab.' });
+fxFolder.addBlade({ view: 'separator' });
+fxFolder.addBinding(params, 'saturation', { min: 0, max: 2, step: 0.05, label: 'Saturation' });
+fxFolder.addBinding(params, 'contrast', { min: 0.5, max: 1.5, step: 0.01, label: 'Contrast' });
+fxFolder.addBinding(params, 'brightness', { min: -0.2, max: 0.2, step: 0.01, label: 'Brightness' });
+fxFolder.addBlade({ view: 'separator' });
 fxFolder.addBinding(params, 'fogNear', { min: 0, max: 30, step: 0.5, label: 'Fog Near' });
 fxFolder.addBinding(params, 'fogFar', { min: 2, max: 50, step: 0.5, label: 'Fog Far' });
 
@@ -775,6 +872,15 @@ function animate() {
     BOUNCE.speed = params.speed;
     bloomPass.strength = params.bloom;
     bloomPass.radius = params.bloomRadius;
+    bloomPass.threshold = params.bloomThreshold;
+    cinemaPass.uniforms.vignetteAmount.value = params.vignette;
+    cinemaPass.uniforms.vignetteFalloff.value = params.vignetteFalloff;
+    cinemaPass.uniforms.grainAmount.value = params.grain;
+    cinemaPass.uniforms.chromaticAberration.value = params.chromatic;
+    cinemaPass.uniforms.saturation.value = params.saturation;
+    cinemaPass.uniforms.contrast.value = params.contrast;
+    cinemaPass.uniforms.brightness.value = params.brightness;
+    cinemaPass.uniforms.time.value = elapsed * 100;
     innerScene.fog.near = params.fogNear;
     innerScene.fog.far = params.fogFar;
 
