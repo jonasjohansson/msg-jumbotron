@@ -27,497 +27,40 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { GammaCorrectionShader } from 'three/addons/shaders/GammaCorrectionShader.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
-import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
-
-// ── Config ──────────────────────────────────────────────────────────
-const COLORS = {
-    knickOrange: 0xF58426,
-    knickBlue:   0x006BB6,
-    knickSilver: 0xBEC0C2,
-    black:       0x000000,
-    white:       0xFFFFFF,
-    hardwood:    0xC8956C,
-};
-
-const BOX = { width: 14, height: 8, depth: 10 };
-
-const BOUNCE = {
-    xMin:           -BOX.width / 2 + 1.2,
-    xMax:            BOX.width / 2 - 1.2,
-    gravity:         9.8,
-    bounceHeight:    4.2,
-    speed:           2.5,
-    dampening:       0.92,
-    minBounceHeight: 0.8,
-};
-
-const BALL_RADIUS = 0.55;
-const JUMBOTRON_Y = 8;
 
 // ── Renderer ────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setClearColor(0x050508);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 0.8;
 document.body.appendChild(renderer.domElement);
 
-// ════════════════════════════════════════════════════════════════════
-// INNER SCENE — basketball animation (rendered to texture)
-// ════════════════════════════════════════════════════════════════════
+// ── Scene ───────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a10, 0.012);
 
-const innerScene = new THREE.Scene();
-innerScene.background = new THREE.Color(0x020810);
-innerScene.fog = new THREE.Fog(0x020810, 2, 12);
-const innerAspect = 16 / 9;
-const innerCamera = new THREE.PerspectiveCamera(75, innerAspect, 0.1, 100);
-innerCamera.position.set(0, -5, 0.8);
-innerCamera.lookAt(0, 2.5, -0.5);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 3, 12);
 
-const renderTarget = new THREE.WebGLRenderTarget(2048, 1152, {
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-});
-
-// ── Inner: Room ─────────────────────────────────────────────────────
-
-// Floor
-const floorMat = new THREE.MeshStandardMaterial({ color: COLORS.hardwood, roughness: 0.7 });
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, BOX.depth), floorMat);
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-innerScene.add(floor);
-
-// Court lines
-const lineMat = new THREE.MeshBasicMaterial({ color: COLORS.knickOrange, side: THREE.DoubleSide });
-const centerCircle = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.0, 64), lineMat);
-centerCircle.rotation.x = -Math.PI / 2;
-centerCircle.position.y = 0.01;
-innerScene.add(centerCircle);
-
-const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, 0.05), lineMat);
-centerLine.rotation.x = -Math.PI / 2;
-centerLine.position.y = 0.01;
-innerScene.add(centerLine);
-
-// Three-point arcs (left and right)
-const arcShape = new THREE.Shape();
-arcShape.absarc(0, 0, 2.2, -Math.PI * 0.4, Math.PI * 0.4, false);
-const arcPoints = arcShape.getPoints(32);
-const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
-const arcLineMat = new THREE.LineBasicMaterial({ color: COLORS.knickOrange });
-const arcLeft = new THREE.Line(arcGeo, arcLineMat);
-arcLeft.rotation.x = -Math.PI / 2;
-arcLeft.rotation.z = Math.PI / 2;
-arcLeft.position.set(-BOX.width / 2 + 0.5, 0.02, 0);
-innerScene.add(arcLeft);
-const arcRight = arcLeft.clone();
-arcRight.rotation.z = -Math.PI / 2;
-arcRight.position.set(BOX.width / 2 - 0.5, 0.02, 0);
-innerScene.add(arcRight);
-
-// "KNICKS" on the court
-const brandCanvas = document.createElement('canvas');
-brandCanvas.width = 1024;
-brandCanvas.height = 512;
-const bCtx = brandCanvas.getContext('2d');
-bCtx.fillStyle = '#C8956C';
-bCtx.fillRect(0, 0, 1024, 512);
-// Outer ring
-bCtx.beginPath();
-bCtx.arc(512, 256, 200, 0, Math.PI * 2);
-bCtx.lineWidth = 6;
-bCtx.strokeStyle = '#006BB6';
-bCtx.stroke();
-// Text
-bCtx.fillStyle = '#006BB6';
-bCtx.font = 'bold 120px Arial, sans-serif';
-bCtx.textAlign = 'center';
-bCtx.textBaseline = 'middle';
-bCtx.fillText('KNICKS', 512, 220);
-bCtx.font = 'bold 50px Arial, sans-serif';
-bCtx.fillStyle = '#F58426';
-bCtx.fillText('NEW YORK', 512, 320);
-
-const brandTexture = new THREE.CanvasTexture(brandCanvas);
-const brandMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(4, 2),
-    new THREE.MeshStandardMaterial({ map: brandTexture })
-);
-brandMesh.rotation.x = -Math.PI / 2;
-brandMesh.position.set(0, 0.006, 0);
-innerScene.add(brandMesh);
-
-// Walls — distinct debug colors so you can see each one
-const backWallMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
-const leftWallMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
-const rightWallMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
-
-const backWall = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, BOX.height), backWallMat);
-backWall.position.set(0, BOX.height / 2, -BOX.depth / 2);
-innerScene.add(backWall);
-
-const sideWallGeo = new THREE.PlaneGeometry(BOX.depth, BOX.height);
-const leftWall = new THREE.Mesh(sideWallGeo, leftWallMat);
-leftWall.position.set(-BOX.width / 2, BOX.height / 2, 0);
-leftWall.rotation.y = Math.PI / 2;
-innerScene.add(leftWall);
-
-const rightWall = new THREE.Mesh(sideWallGeo, rightWallMat);
-rightWall.position.set(BOX.width / 2, BOX.height / 2, 0);
-rightWall.rotation.y = -Math.PI / 2;
-innerScene.add(rightWall);
-
-// Ceiling
-const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x0a1a3a });
-const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(BOX.width, BOX.depth), ceilingMat);
-ceiling.rotation.x = Math.PI / 2;
-ceiling.position.y = BOX.height;
-innerScene.add(ceiling);
-
-// Debug: wireframe box showing room bounds
-const roomWireframe = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(BOX.width, BOX.height, BOX.depth)),
-    new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.4 })
-);
-roomWireframe.position.y = BOX.height / 2;
-roomWireframe.visible = false;
-innerScene.add(roomWireframe);
-
-// Debug: axes helper at room center
-const axesHelper = new THREE.AxesHelper(2);
-axesHelper.position.y = 0.05;
-axesHelper.visible = false;
-innerScene.add(axesHelper);
-
-// ── Inner: Lighting ─────────────────────────────────────────────────
-const ambientLight = new THREE.AmbientLight(COLORS.white, 5);
-innerScene.add(ambientLight);
-
-// Overhead spot — lights the floor
-const spotlight = new THREE.SpotLight(COLORS.white, 2.5, 30, Math.PI / 3, 0.4);
-spotlight.position.set(0, BOX.height + 2, 0);
-spotlight.target.position.set(0, 0, 0);
-spotlight.castShadow = true;
-spotlight.shadow.mapSize.set(1024, 1024);
-innerScene.add(spotlight);
-innerScene.add(spotlight.target);
-
-// Front fill — lights from viewer direction
-const frontFill = new THREE.PointLight(COLORS.white, 1.5, 20);
-frontFill.position.set(0, -3, 1);
-innerScene.add(frontFill);
-
-// Back wall light
-const backLight = new THREE.PointLight(COLORS.white, 1.5, 20);
-backLight.position.set(0, BOX.height / 2, -BOX.depth / 2 + 2);
-innerScene.add(backLight);
-
-// Left wall light
-const leftLight = new THREE.PointLight(COLORS.white, 1.2, 20);
-leftLight.position.set(-BOX.width / 2 + 2, BOX.height / 2, 0);
-innerScene.add(leftLight);
-
-// Right wall light
-const rightLight = new THREE.PointLight(COLORS.white, 1.2, 20);
-rightLight.position.set(BOX.width / 2 - 2, BOX.height / 2, 0);
-innerScene.add(rightLight);
-
-// Ceiling light
-const ceilingLight = new THREE.PointLight(COLORS.white, 1.0, 20);
-ceilingLight.position.set(0, BOX.height - 1, 0);
-innerScene.add(ceilingLight);
-
-// Blue edge accents
-const edgeL = new THREE.PointLight(COLORS.knickBlue, 0.8, 12);
-edgeL.position.set(-BOX.width / 2, 0.5, 0);
-innerScene.add(edgeL);
-const edgeR = new THREE.PointLight(COLORS.knickBlue, 0.8, 12);
-edgeR.position.set(BOX.width / 2, 0.5, 0);
-innerScene.add(edgeR);
-
-// ── Bounce Sound (sampled) ───────────────────────────────────────────
-let audioStarted = false;
-
-// Pool of players for overlapping bounces
-const PLAYER_POOL_SIZE = 6;
-const bouncePlayers = [];
-let nextPlayer = 0;
-
-const bounceBuffer = new Tone.ToneAudioBuffer('bounce.mp3', () => {
-    for (let i = 0; i < PLAYER_POOL_SIZE; i++) {
-        const player = new Tone.Player(bounceBuffer).toDestination();
-        player.volume.value = -4;
-        bouncePlayers.push(player);
-    }
-});
-
-function playBounceSound() {
-    if (!audioStarted || bouncePlayers.length === 0) return;
-    const player = bouncePlayers[nextPlayer % PLAYER_POOL_SIZE];
-    nextPlayer++;
-    // Modulate playback rate for variation (0.85–1.15x = subtle pitch shift)
-    player.playbackRate = 0.88 + Math.random() * 0.24;
-    // Slight volume variation
-    player.volume.value = -6 + Math.random() * 4;
-    player.start();
-}
-
-// Start audio on first interaction
-async function startAudio() {
-    if (!audioStarted) {
-        await Tone.start();
-        audioStarted = true;
-    }
-}
-document.addEventListener('click', startAudio);
-document.addEventListener('pointerdown', startAudio);
-
-// ── Inner: Multi-Ball System ─────────────────────────────────────────
-const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
-const ballBaseMat = new THREE.MeshStandardMaterial({ color: COLORS.knickOrange, roughness: 0.7, metalness: 0.15 });
-const seamMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
-const shadowBaseMat = new THREE.MeshBasicMaterial({ color: COLORS.black, transparent: true, opacity: 0.4 });
-const shadowGeo = new THREE.CircleGeometry(0.6, 32);
-
-const PARTICLE_COUNT_PER = 40;
-
-const balls = []; // array of ball objects
-
-function createBallObject() {
-    // Mesh
-    const mesh = new THREE.Mesh(ballGeo, ballBaseMat.clone());
-    mesh.castShadow = true;
-    innerScene.add(mesh);
-
-    // Seams
-    [[0,0,0],[Math.PI/2,0,0],[0,Math.PI/2,0]].forEach(([rx,ry,rz]) => {
-        const seam = new THREE.Mesh(
-            new THREE.TorusGeometry(BALL_RADIUS + 0.005, 0.012, 8, 64),
-            seamMat
-        );
-        seam.rotation.set(rx, ry, rz);
-        mesh.add(seam);
-    });
-
-    // Shadow
-    const sMat = shadowBaseMat.clone();
-    const shadow = new THREE.Mesh(shadowGeo, sMat);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.01;
-    innerScene.add(shadow);
-
-    // Particles
-    const pPositions = new Float32Array(PARTICLE_COUNT_PER * 3);
-    const pGeo = new THREE.BufferGeometry();
-    pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-    const pMat = new THREE.PointsMaterial({
-        color: COLORS.knickOrange,
-        size: 0.08,
-        transparent: true,
-        opacity: 0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        sizeAttenuation: true,
-    });
-    const pPoints = new THREE.Points(pGeo, pMat);
-    innerScene.add(pPoints);
-    const pVelocities = [];
-    for (let i = 0; i < PARTICLE_COUNT_PER; i++) pVelocities.push(new THREE.Vector3());
-
-    // Impact ring
-    const ringMat = new THREE.MeshBasicMaterial({
-        color: COLORS.knickOrange, transparent: true, opacity: 0, side: THREE.DoubleSide,
-    });
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.4, 32), ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.02;
-    innerScene.add(ring);
-
-    // Randomize start position and timing
-    const startX = BOUNCE.xMin + Math.random() * (BOUNCE.xMax - BOUNCE.xMin);
-    const startY = 1 + Math.random() * BOUNCE.bounceHeight;
-    const dir = Math.random() > 0.5 ? 1 : -1;
-
-    const obj = {
-        mesh,
-        shadow, sMat,
-        pGeo, pMat, pPositions, pVelocities, pLife: 0,
-        ring, ringMat, ringLife: 0,
-        state: {
-            x: startX, y: startY, vy: 0,
-            direction: dir,
-            currentBounceHeight: BOUNCE.bounceHeight,
-            spinAngle: Math.random() * Math.PI * 2,
-            prevY: startY,
-            squash: 0,
-        },
-    };
-
-    mesh.position.set(startX, startY, 0);
-    shadow.position.x = startX;
-
-    balls.push(obj);
-    return obj;
-}
-
-function removeBallObject() {
-    if (balls.length <= 1) return;
-    const obj = balls.pop();
-    innerScene.remove(obj.mesh);
-    innerScene.remove(obj.shadow);
-    innerScene.remove(obj.ring);
-    // Remove particles Points
-    obj.pGeo.dispose();
-    obj.pMat.dispose();
-    innerScene.remove(innerScene.children.find(c => c.geometry === obj.pGeo) || obj.mesh);
-    // Find and remove the Points object
-    for (let i = innerScene.children.length - 1; i >= 0; i--) {
-        if (innerScene.children[i].material === obj.pMat) {
-            innerScene.remove(innerScene.children[i]);
-            break;
-        }
-    }
-}
-
-function spawnParticles(obj, x) {
-    obj.pLife = 1.0;
-    for (let i = 0; i < PARTICLE_COUNT_PER; i++) {
-        obj.pPositions[i * 3] = x;
-        obj.pPositions[i * 3 + 1] = BALL_RADIUS;
-        obj.pPositions[i * 3 + 2] = 0;
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 1.5 + Math.random() * 4;
-        obj.pVelocities[i].set(
-            Math.cos(angle) * speed,
-            Math.random() * 3 + 1,
-            Math.sin(angle) * speed * 0.5
-        );
-    }
-    obj.pGeo.attributes.position.needsUpdate = true;
-}
-
-function updateBallObject(obj, dt) {
-    const s = obj.state;
-    s.prevY = s.y;
-    s.x += BOUNCE.speed * s.direction * dt;
-
-    if (s.x > BOUNCE.xMax) {
-        s.x = BOUNCE.xMax;
-        s.direction = -1;
-        s.currentBounceHeight = BOUNCE.bounceHeight;
-    } else if (s.x < BOUNCE.xMin) {
-        s.x = BOUNCE.xMin;
-        s.direction = 1;
-        s.currentBounceHeight = BOUNCE.bounceHeight;
-    }
-
-    s.vy -= BOUNCE.gravity * dt;
-    s.y += s.vy * dt;
-
-    if (s.y <= BALL_RADIUS && s.vy < 0) {
-        const impactSpeed = -s.vy; // how fast it was going when it hit
-        s.y = BALL_RADIUS;
-        s.currentBounceHeight *= BOUNCE.dampening;
-        if (s.currentBounceHeight < BOUNCE.minBounceHeight)
-            s.currentBounceHeight = BOUNCE.minBounceHeight;
-        s.vy = Math.sqrt(2 * BOUNCE.gravity * s.currentBounceHeight);
-
-        if (impactSpeed > 0.3) {
-            s.squash = 1.0;
-            spawnParticles(obj, s.x);
-            obj.ringLife = 1.0;
-            obj.ring.position.x = s.x;
-            obj.ring.scale.set(1, 1, 1);
-            playBounceSound();
-        }
-    }
-
-    // Squash/stretch
-    s.squash *= 0.85;
-    const sq = s.squash * 0.35;
-    const sy = 1 - sq;
-    const sxz = 1 + sq * 0.5;
-    const r = params.ballRadius / BALL_RADIUS;
-
-    s.spinAngle += s.direction * dt * 5;
-    obj.mesh.rotation.z = s.spinAngle;
-    obj.mesh.position.x = s.x;
-    obj.mesh.position.y = s.y;
-    obj.mesh.scale.set(sxz * r, sy * r, sxz * r);
-
-    // Shadow
-    obj.shadow.position.x = s.x;
-    const hRatio = Math.max(0, 1 - s.y / BOUNCE.bounceHeight);
-    const sc = 0.5 + hRatio * 0.5;
-    obj.shadow.scale.set(sc, sc, sc);
-    obj.sMat.opacity = 0.15 + hRatio * 0.35;
-
-    // Particles
-    if (obj.pLife > 0) {
-        obj.pLife -= dt * 2.5;
-        obj.pMat.opacity = Math.max(0, obj.pLife * 0.8);
-        for (let i = 0; i < PARTICLE_COUNT_PER; i++) {
-            obj.pVelocities[i].y -= 9.8 * dt;
-            obj.pPositions[i * 3]     += obj.pVelocities[i].x * dt;
-            obj.pPositions[i * 3 + 1] += obj.pVelocities[i].y * dt;
-            obj.pPositions[i * 3 + 2] += obj.pVelocities[i].z * dt;
-        }
-        obj.pGeo.attributes.position.needsUpdate = true;
-    }
-
-    // Impact ring
-    if (obj.ringLife > 0) {
-        obj.ringLife -= dt * 3;
-        obj.ringMat.opacity = Math.max(0, obj.ringLife * 0.6);
-        const rs = 1 + (1 - obj.ringLife) * 4;
-        obj.ring.scale.set(rs, rs, rs);
-    }
-}
-
-function updateAllBalls(dt) {
-    for (const b of balls) updateBallObject(b, dt);
-}
-
-// Create the first ball
-createBallObject();
-
-// ════════════════════════════════════════════════════════════════════
-// OUTER SCENE — arena with jumbotron
-// ════════════════════════════════════════════════════════════════════
-
-const arenaScene = new THREE.Scene();
-arenaScene.fog = new THREE.FogExp2(0x0a0a10, 0.012);
-
-const arenaCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-arenaCamera.position.set(0, 2, 18);
-
-const controls = new OrbitControls(arenaCamera, renderer.domElement);
-controls.target.set(0, JUMBOTRON_Y, 0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 7, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 5;
-controls.maxDistance = 50;
+controls.maxDistance = 100;
 controls.update();
 
-// ── Arena: Load 3D Model ────────────────────────────────────────────
+// ── Loaders ─────────────────────────────────────────────────────────
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/');
 const gltfLoader = new GLTFLoader();
 gltfLoader.setDRACOLoader(dracoLoader);
 
-const screenMat = new THREE.MeshBasicMaterial({ map: renderTarget.texture });
-
-// Material names on Center Screens that should display the render target
-const SCREEN_MAT_NAMES = ['Main Screen', 'Score Screen', 'Big Screen Text', 'Big Screen Logo 1', 'Big Screen Logo 2'];
-
-// Emissive material for light fixtures (Halogen Lights, etc.)
+// ── Light Fixtures Shader ───────────────────────────────────────────
 const lightFixtureUniforms = {
     color: { value: new THREE.Color(0xffffff) },
     intensity: { value: 1.5 },
@@ -538,154 +81,112 @@ const lightFixtureMat = new THREE.ShaderMaterial({
         uniform float time;
         varying vec2 vUv;
         void main() {
-            // Subtle pulse
             float pulse = 0.95 + 0.05 * sin(time * 2.0);
             gl_FragColor = vec4(color * intensity * pulse, 1.0);
         }
     `,
 });
 
-// Track all screen materials for video swap
+// ── Screen Materials ────────────────────────────────────────────────
 const allScreenMaterials = [];
+let defaultScreenTexture = null;
+let videoTexture = null;
+let videoElement = null;
+let videoMode = false;
 
-// Recompute UVs for a screen mesh using planar projection
-// Determines the dominant face direction from normals, then projects
-// positions onto the two perpendicular axes, normalized to 0–1.
-function recomputeScreenUVs(mesh) {
-    const geo = mesh.geometry;
-    const pos = geo.attributes.position;
-    const norm = geo.attributes.normal;
-    if (!pos || !norm) return;
-
-    // Find average normal to determine face direction
-    const avgNormal = new THREE.Vector3();
-    for (let i = 0; i < norm.count; i++) {
-        avgNormal.x += Math.abs(norm.getX(i));
-        avgNormal.y += Math.abs(norm.getY(i));
-        avgNormal.z += Math.abs(norm.getZ(i));
-    }
-
-    // Determine which two axes to project onto (the two with smallest avg normal)
-    const nx = avgNormal.x, ny = avgNormal.y, nz = avgNormal.z;
-    let axisU, axisV;
-    if (nx >= ny && nx >= nz) {
-        // Face points along X → project onto Z (u) and Y (v)
-        axisU = 'z'; axisV = 'y';
-    } else if (nz >= nx && nz >= ny) {
-        // Face points along Z → project onto X (u) and Y (v)
-        axisU = 'x'; axisV = 'y';
-    } else {
-        // Face points along Y → project onto X (u) and Z (v)
-        axisU = 'x'; axisV = 'z';
-    }
-
-    const getComp = (i, axis) => {
-        if (axis === 'x') return pos.getX(i);
-        if (axis === 'y') return pos.getY(i);
-        return pos.getZ(i);
-    };
-
-    // Find bounds
-    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
-    for (let i = 0; i < pos.count; i++) {
-        const u = getComp(i, axisU), v = getComp(i, axisV);
-        if (u < minU) minU = u; if (u > maxU) maxU = u;
-        if (v < minV) minV = v; if (v > maxV) maxV = v;
-    }
-
-    const rangeU = maxU - minU || 1;
-    const rangeV = maxV - minV || 1;
-
-    // Write new UVs
-    const uvs = new Float32Array(pos.count * 2);
-    for (let i = 0; i < pos.count; i++) {
-        uvs[i * 2] = (getComp(i, axisU) - minU) / rangeU;
-        uvs[i * 2 + 1] = (getComp(i, axisV) - minV) / rangeV;
-    }
-    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+function setScreenTexture(texture) {
+    allScreenMaterials.forEach(mat => {
+        mat.map = texture;
+        mat.color.set(0xffffff);
+        mat.needsUpdate = true;
+    });
 }
 
+// ── Load Arena (remove Center Screens — replaced by screens.glb) ───
 gltfLoader.load('models/MSG_Basketball_converted.glb', (gltf) => {
     const model = gltf.scene;
     model.scale.setScalar(0.3);
-    arenaScene.add(model);
 
+    const toRemove = [];
     model.traverse((child) => {
         if (!child.isMesh) return;
         const name = child.name || '';
-
-        // Center Screens — swap screen-face materials with render target
-        // Meshes are split as Center_Screens_1 through _7, one material each
-        if (/^Center_Screens_/i.test(name)) {
-            const mat = child.material;
-            if (mat.name !== 'Black' && !/Service/i.test(mat.name)) {
-                // Recompute UVs via planar projection based on dominant normal
-                recomputeScreenUVs(child);
-                const sMat = new THREE.MeshBasicMaterial({ map: renderTarget.texture });
-                child.material = sMat;
-                allScreenMaterials.push(sMat);
-            }
-        }
-
-        // Halogen Lights & Speakers — emissive shader
-        if (/^Halogen_Lights|^Speakers/i.test(name)) {
-            child.material = lightFixtureMat;
-        }
-
-        // TV Screens around the arena — also show render target
-        if (/^Tv_Screens|^TV_Screens/i.test(name) && !/Center/i.test(name)) {
-            const mat = child.material;
-            if (mat.name !== 'Black') {
-                recomputeScreenUVs(child);
-                const sMat = new THREE.MeshBasicMaterial({ map: renderTarget.texture });
-                child.material = sMat;
-                allScreenMaterials.push(sMat);
-            }
-        }
+        if (/Center_Screens/i.test(name)) toRemove.push(child);
+        if (/^Halogen_Lights|^Speakers/i.test(name)) child.material = lightFixtureMat;
     });
+    toRemove.forEach(m => { m.removeFromParent(); m.geometry.dispose(); });
+
+    scene.add(model);
 });
 
-// ── Arena: Lighting (simple — model has geometry, not real lights) ───
-arenaScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+// ── Load UV-Mapped Screens ──────────────────────────────────────────
+gltfLoader.load('models/screens.glb', (gltf) => {
+    const screens = gltf.scene;
+    screens.scale.setScalar(0.3);
+    scene.add(screens);
 
+    const backMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+    screens.traverse((child) => {
+        if (!child.isMesh) return;
+        // Front: screen texture
+        const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+        child.material = sMat;
+        allScreenMaterials.push(sMat);
+        // Back: solid black
+        const backMesh = child.clone();
+        backMesh.material = backMat;
+        child.parent.add(backMesh);
+    });
+
+    // Load default test video
+    const defaultVideo = document.createElement('video');
+    defaultVideo.src = 'models/screenUV_Layout_Test01.mp4';
+    defaultVideo.loop = true;
+    defaultVideo.muted = true;
+    defaultVideo.playsInline = true;
+    defaultVideo.play().catch(() => {
+        document.addEventListener('click', () => defaultVideo.play(), { once: true });
+    });
+    const defaultVidTex = new THREE.VideoTexture(defaultVideo);
+    defaultVidTex.minFilter = THREE.LinearFilter;
+    defaultVidTex.magFilter = THREE.LinearFilter;
+    defaultVidTex.colorSpace = THREE.SRGBColorSpace;
+    defaultVidTex.flipY = false;
+    defaultScreenTexture = defaultVidTex;
+    setScreenTexture(defaultVidTex);
+    videoMode = true;
+});
+
+// ── Arena Lighting ──────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+scene.add(ambientLight);
 const arenaSpot1 = new THREE.SpotLight(0xffffff, 2.0, 120, Math.PI / 3, 0.5);
 arenaSpot1.position.set(0, 40, 0);
-arenaScene.add(arenaSpot1);
-
+scene.add(arenaSpot1);
 const arenaSpot2 = new THREE.SpotLight(0xffffff, 1.0, 80, Math.PI / 3, 0.6);
 arenaSpot2.position.set(20, 30, 20);
-arenaScene.add(arenaSpot2);
-
+scene.add(arenaSpot2);
 const arenaSpot3 = new THREE.SpotLight(0xffffff, 1.0, 80, Math.PI / 3, 0.6);
 arenaSpot3.position.set(-20, 30, -20);
-arenaScene.add(arenaSpot3);
+scene.add(arenaSpot3);
 
-// ── Post-processing ─────────────────────────────────────────────────
+// ── Post-Processing ─────────────────────────────────────────────────
 const composer = new EffectComposer(renderer);
-const renderPass = new RenderPass(arenaScene, arenaCamera);
-composer.addPass(renderPass);
+composer.addPass(new RenderPass(scene, camera));
 
-// Bloom — screen glow, ball highlights
 const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.6,   // strength
-    0.8,   // radius
-    0.75   // threshold
-);
+    new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.5, 0.8);
 composer.addPass(bloomPass);
 
-// Vignette + Film Grain + Chromatic Aberration + Color Grade — custom shader
 const cinemaShader = {
     uniforms: {
         tDiffuse: { value: null },
         time: { value: 0 },
-        vignetteAmount: { value: 0.35 },
-        vignetteFalloff: { value: 0.5 },
-        grainAmount: { value: 0.06 },
-        chromaticAberration: { value: 0.003 },
-        saturation: { value: 1.15 },
-        contrast: { value: 1.08 },
-        brightness: { value: 0.02 },
+        grainAmount: { value: 0 },
+        chromaticAberration: { value: 0 },
+        saturation: { value: 1.0 },
+        contrast: { value: 1.0 },
+        brightness: { value: 0 },
     },
     vertexShader: `
         varying vec2 vUv;
@@ -696,25 +197,12 @@ const cinemaShader = {
     `,
     fragmentShader: `
         uniform sampler2D tDiffuse;
-        uniform float time;
-        uniform float vignetteAmount;
-        uniform float vignetteFalloff;
-        uniform float grainAmount;
-        uniform float chromaticAberration;
-        uniform float saturation;
-        uniform float contrast;
-        uniform float brightness;
+        uniform float time, grainAmount;
+        uniform float chromaticAberration, saturation, contrast, brightness;
         varying vec2 vUv;
-
-        // Film grain
-        float rand(vec2 co) {
-            return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
-        }
-
+        float rand(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
         void main() {
             vec2 uv = vUv;
-
-            // Chromatic aberration
             vec2 dir = uv - 0.5;
             float dist = length(dir);
             vec2 offset = dir * chromaticAberration * dist;
@@ -722,328 +210,174 @@ const cinemaShader = {
             float g = texture2D(tDiffuse, uv).g;
             float b = texture2D(tDiffuse, uv - offset).b;
             vec3 color = vec3(r, g, b);
-
-            // Brightness + Contrast
             color = (color + brightness) * contrast;
-
-            // Saturation
             float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
             color = mix(vec3(luma), color, saturation);
-
-            // Vignette
-            float vig = 1.0 - smoothstep(vignetteFalloff, vignetteFalloff + vignetteAmount, dist * 1.4);
-            color *= vig;
-
-            // Film grain
             float grain = rand(uv * time) * grainAmount;
             color += grain - grainAmount * 0.5;
-
             gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
         }
     `,
 };
 const cinemaPass = new ShaderPass(cinemaShader);
 composer.addPass(cinemaPass);
-
-const outputPass = new OutputPass();
-composer.addPass(outputPass);
+composer.addPass(new OutputPass());
 
 // ── Resize ──────────────────────────────────────────────────────────
 function onResize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h);
     renderer.setPixelRatio(window.devicePixelRatio);
     composer.setSize(w, h);
-    arenaCamera.aspect = w / h;
-    arenaCamera.updateProjectionMatrix();
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', onResize);
 onResize();
 
 // ── Tweakpane ───────────────────────────────────────────────────────
 const params = {
-    camX: innerCamera.position.x,
-    camY: innerCamera.position.y,
-    camZ: innerCamera.position.z,
-    lookX: 0, lookY: 2.5, lookZ: -0.5,
-    fov: innerCamera.fov,
-    ballRadius: BALL_RADIUS,
-    bounceHeight: BOUNCE.bounceHeight,
-    speed: BOUNCE.speed,
-    bloom: bloomPass.strength,
-    bloomRadius: bloomPass.radius,
-    bloomThreshold: bloomPass.threshold,
-    vignette: cinemaShader.uniforms.vignetteAmount.value,
-    vignetteFalloff: cinemaShader.uniforms.vignetteFalloff.value,
-    grain: cinemaShader.uniforms.grainAmount.value,
-    chromatic: cinemaShader.uniforms.chromaticAberration.value,
-    saturation: cinemaShader.uniforms.saturation.value,
-    contrast: cinemaShader.uniforms.contrast.value,
-    brightness: cinemaShader.uniforms.brightness.value,
-    fogNear: innerScene.fog.near,
-    fogFar: innerScene.fog.far,
-    ambient: 5,
-    overhead: spotlight.intensity,
-    frontFill: frontFill.intensity,
-    backWall: backLight.intensity,
-    leftWall: leftLight.intensity,
-    rightWall: rightLight.intensity,
-    ceilingLt: ceilingLight.intensity,
-    blueEdge: edgeL.intensity,
-    lightFixtureIntensity: 1.5,
-    lightFixtureColor: '#ffffff',
-    showWireframe: false,
-    showAxes: false,
-    debugWalls: false,
+    ambientIntensity: 0.8, ambientColor: '#ffffff',
+    spotIntensity: 2.0, spotColor: '#ffffff',
+    bgColor: '#050508', fogDensity: 0.012, fogColor: '#0a0a10',
+    exposure: 0.8,
+    bloom: 0.4, bloomRadius: 0.5, bloomThreshold: 0.8,
+    grain: 0, chromatic: 0,
+    saturation: 1.0, contrast: 1.0, brightness: 0,
+    lightFixtureIntensity: 1.5, lightFixtureColor: '#ffffff',
 };
 
-const pane = new Pane({ title: 'Jumbotron Controls' });
+const pane = new Pane({ title: 'MSG Jumbotron' });
 
-const camFolder = pane.addFolder({ title: 'Inner Camera' });
-camFolder.addBinding(params, 'camX', { min: -10, max: 10, step: 0.1, label: 'Pos X' });
-camFolder.addBinding(params, 'camY', { min: -10, max: 10, step: 0.1, label: 'Pos Y' });
-camFolder.addBinding(params, 'camZ', { min: -5, max: 15, step: 0.1, label: 'Pos Z' });
-camFolder.addBinding(params, 'lookX', { min: -10, max: 10, step: 0.1, label: 'Look X' });
-camFolder.addBinding(params, 'lookY', { min: -5, max: 10, step: 0.1, label: 'Look Y' });
-camFolder.addBinding(params, 'lookZ', { min: -10, max: 10, step: 0.1, label: 'Look Z' });
-camFolder.addBinding(params, 'fov', { min: 20, max: 120, step: 1, label: 'FOV' });
-
-const ballFolder = pane.addFolder({ title: 'Ball' });
-ballFolder.addBinding(params, 'ballRadius', { min: 0.2, max: 1.5, step: 0.05, label: 'Radius' });
-ballFolder.addBinding(params, 'bounceHeight', { min: 1, max: 7, step: 0.1, label: 'Bounce H' });
-ballFolder.addBinding(params, 'speed', { min: 0.5, max: 6, step: 0.1, label: 'Speed' });
-
-ballFolder.addBlade({ view: 'separator' });
-ballFolder.addButton({ title: 'Add Ball' }).on('click', () => createBallObject());
-ballFolder.addButton({ title: 'Remove Ball' }).on('click', () => removeBallObject());
-
-const lightFolder = pane.addFolder({ title: 'Lighting' });
-lightFolder.addBinding(params, 'ambient', { min: 0, max: 10, step: 0.1, label: 'Ambient' });
-lightFolder.addBinding(params, 'overhead', { min: 0, max: 5, step: 0.1, label: 'Overhead' });
-lightFolder.addBinding(params, 'frontFill', { min: 0, max: 4, step: 0.1, label: 'Front fill' });
-lightFolder.addBinding(params, 'backWall', { min: 0, max: 4, step: 0.1, label: 'Back wall' });
-lightFolder.addBinding(params, 'leftWall', { min: 0, max: 4, step: 0.1, label: 'Left wall' });
-lightFolder.addBinding(params, 'rightWall', { min: 0, max: 4, step: 0.1, label: 'Right wall' });
-lightFolder.addBinding(params, 'ceilingLt', { min: 0, max: 4, step: 0.1, label: 'Ceiling' });
-lightFolder.addBinding(params, 'blueEdge', { min: 0, max: 3, step: 0.1, label: 'Blue edge' });
-
-const fxFolder = pane.addFolder({ title: 'Post FX' });
+const fxFolder = pane.addFolder({ title: 'Post FX', expanded: false });
 fxFolder.addBinding(params, 'bloom', { min: 0, max: 3, step: 0.05, label: 'Bloom' });
 fxFolder.addBinding(params, 'bloomRadius', { min: 0, max: 2, step: 0.05, label: 'Bloom Radius' });
 fxFolder.addBinding(params, 'bloomThreshold', { min: 0, max: 1.5, step: 0.05, label: 'Bloom Thresh' });
 fxFolder.addBlade({ view: 'separator' });
-fxFolder.addBinding(params, 'vignette', { min: 0, max: 1, step: 0.01, label: 'Vignette' });
-fxFolder.addBinding(params, 'vignetteFalloff', { min: 0, max: 1, step: 0.01, label: 'Vig. Falloff' });
 fxFolder.addBinding(params, 'grain', { min: 0, max: 0.2, step: 0.005, label: 'Film Grain' });
 fxFolder.addBinding(params, 'chromatic', { min: 0, max: 0.02, step: 0.001, label: 'Chromatic Ab.' });
 fxFolder.addBlade({ view: 'separator' });
 fxFolder.addBinding(params, 'saturation', { min: 0, max: 2, step: 0.05, label: 'Saturation' });
 fxFolder.addBinding(params, 'contrast', { min: 0.5, max: 1.5, step: 0.01, label: 'Contrast' });
 fxFolder.addBinding(params, 'brightness', { min: -0.2, max: 0.2, step: 0.01, label: 'Brightness' });
-fxFolder.addBlade({ view: 'separator' });
-fxFolder.addBinding(params, 'fogNear', { min: 0, max: 30, step: 0.5, label: 'Fog Near' });
-fxFolder.addBinding(params, 'fogFar', { min: 2, max: 50, step: 0.5, label: 'Fog Far' });
 
-const fixtureFolder = pane.addFolder({ title: 'Light Fixtures' });
+const sceneFolder = pane.addFolder({ title: 'Scene', expanded: false });
+sceneFolder.addBinding(params, 'ambientIntensity', { min: 0, max: 3, step: 0.05, label: 'Ambient' });
+sceneFolder.addBinding(params, 'ambientColor', { label: 'Ambient Color' });
+sceneFolder.addBinding(params, 'spotIntensity', { min: 0, max: 5, step: 0.1, label: 'Spots' });
+sceneFolder.addBinding(params, 'spotColor', { label: 'Spot Color' });
+sceneFolder.addBinding(params, 'bgColor', { label: 'Background' });
+sceneFolder.addBinding(params, 'fogDensity', { min: 0, max: 0.05, step: 0.001, label: 'Fog Density' });
+sceneFolder.addBinding(params, 'fogColor', { label: 'Fog Color' });
+sceneFolder.addBinding(params, 'exposure', { min: 0.2, max: 3, step: 0.05, label: 'Exposure' });
+
+const fixtureFolder = pane.addFolder({ title: 'Light Fixtures', expanded: false });
 fixtureFolder.addBinding(params, 'lightFixtureIntensity', { min: 0, max: 5, step: 0.1, label: 'Intensity' });
 fixtureFolder.addBinding(params, 'lightFixtureColor', { label: 'Color' });
 
-const debugFolder = pane.addFolder({ title: 'Debug', expanded: false });
-debugFolder.addBinding(params, 'showWireframe', { label: 'Room wireframe' });
-debugFolder.addBinding(params, 'showAxes', { label: 'Axes helper' });
-debugFolder.addBinding(params, 'debugWalls', { label: 'Color-code walls' });
+// ── Source Controls ─────────────────────────────────────────────────
+const sourceFolder = pane.addFolder({ title: 'Screen Source' });
 
-// ── Video state (declared before animate loop) ─────────────────────
-let videoTexture = null;
-let videoElement = null;
-let videoMode = false;
+sourceFolder.addButton({ title: 'Default Test Video' }).on('click', () => {
+    if (defaultScreenTexture) { setScreenTexture(defaultScreenTexture); videoMode = true; }
+});
+
 
 // ── Animation Loop ──────────────────────────────────────────────────
 const clock = new THREE.Clock();
-const _lookTarget = new THREE.Vector3();
 let elapsed = 0;
 
 function animate() {
     requestAnimationFrame(animate);
-
-    let dt = clock.getDelta();
-    if (dt > 0.05) dt = 0.05;
+    const dt = Math.min(clock.getDelta(), 0.05);
     elapsed += dt;
 
-    // Tweakpane → inner camera
-    innerCamera.position.set(params.camX, params.camY, params.camZ);
-    _lookTarget.set(params.lookX, params.lookY, params.lookZ);
-    innerCamera.lookAt(_lookTarget);
-    if (innerCamera.fov !== params.fov) {
-        innerCamera.fov = params.fov;
-        innerCamera.updateProjectionMatrix();
-    }
-    BOUNCE.bounceHeight = params.bounceHeight;
-    BOUNCE.speed = params.speed;
+    // Scene
+    ambientLight.intensity = params.ambientIntensity;
+    ambientLight.color.set(params.ambientColor);
+    arenaSpot1.intensity = params.spotIntensity;
+    arenaSpot2.intensity = params.spotIntensity * 0.5;
+    arenaSpot3.intensity = params.spotIntensity * 0.5;
+    arenaSpot1.color.set(params.spotColor);
+    arenaSpot2.color.set(params.spotColor);
+    arenaSpot3.color.set(params.spotColor);
+    renderer.setClearColor(params.bgColor);
+    scene.fog.density = params.fogDensity;
+    scene.fog.color.set(params.fogColor);
+    renderer.toneMappingExposure = params.exposure;
+
+    // Post FX
     bloomPass.strength = params.bloom;
     bloomPass.radius = params.bloomRadius;
     bloomPass.threshold = params.bloomThreshold;
-    cinemaPass.uniforms.vignetteAmount.value = params.vignette;
-    cinemaPass.uniforms.vignetteFalloff.value = params.vignetteFalloff;
     cinemaPass.uniforms.grainAmount.value = params.grain;
     cinemaPass.uniforms.chromaticAberration.value = params.chromatic;
     cinemaPass.uniforms.saturation.value = params.saturation;
     cinemaPass.uniforms.contrast.value = params.contrast;
     cinemaPass.uniforms.brightness.value = params.brightness;
     cinemaPass.uniforms.time.value = elapsed * 100;
-    innerScene.fog.near = params.fogNear;
-    innerScene.fog.far = params.fogFar;
 
-    // Lighting
-    ambientLight.intensity = params.ambient;
-    spotlight.intensity = params.overhead;
-    frontFill.intensity = params.frontFill;
-    backLight.intensity = params.backWall;
-    leftLight.intensity = params.leftWall;
-    rightLight.intensity = params.rightWall;
-    ceilingLight.intensity = params.ceilingLt;
-    edgeL.intensity = params.blueEdge;
-    edgeR.intensity = params.blueEdge;
-
-    // Debug visuals
-    roomWireframe.visible = params.showWireframe;
-    axesHelper.visible = params.showAxes;
-    if (params.debugWalls) {
-        backWallMat.color.setHex(0x2a0000);  // red tint
-        leftWallMat.color.setHex(0x002a00);  // green tint
-        rightWallMat.color.setHex(0x00002a); // blue tint
-        ceilingMat.color.setHex(0x2a2a00);   // yellow tint
-    } else {
-        backWallMat.color.setHex(0x0a1a3a);
-        leftWallMat.color.setHex(0x0a1a3a);
-        rightWallMat.color.setHex(0x0a1a3a);
-        ceilingMat.color.setHex(0x0a1a3a);
-    }
-
-    // Light fixtures shader
+    // Light fixtures
     lightFixtureUniforms.time.value = elapsed;
     lightFixtureUniforms.intensity.value = params.lightFixtureIntensity;
     lightFixtureUniforms.color.value.set(params.lightFixtureColor);
 
-    updateAllBalls(dt);
     controls.update();
-
-    // Render inner scene to texture (skip if playing video)
-    if (!videoMode) {
-        renderer.setRenderTarget(renderTarget);
-        renderer.render(innerScene, innerCamera);
-    }
-
-    // Render outer scene with post-processing
     renderer.setRenderTarget(null);
     composer.render();
 }
-
 animate();
 
-// ── Fullscreen Toggle ───────────────────────────────────────────────
+// ── Fullscreen ──────────────────────────────────────────────────────
 renderer.domElement.addEventListener('dblclick', () => {
-    if (!document.fullscreenElement) {
-        renderer.domElement.requestFullscreen();
-    } else {
-        document.exitFullscreen();
-    }
+    if (!document.fullscreenElement) renderer.domElement.requestFullscreen();
+    else document.exitFullscreen();
 });
 
-// ── Video Drag & Drop ───────────────────────────────────────────────
-function setScreenTexture(texture) {
-    console.log('setScreenTexture called, materials count:', allScreenMaterials.length);
-    allScreenMaterials.forEach(mat => { mat.map = texture; mat.needsUpdate = true; });
-}
-
+// ── Video/Image Switching ───────────────────────────────────────────
 function switchToVideo(file) {
-    // Clean up previous video
-    if (videoElement) {
-        videoElement.pause();
-        videoElement.src = '';
-        videoElement.remove();
-    }
+    if (videoElement) { videoElement.pause(); videoElement.src = ''; videoElement.remove(); }
     if (videoTexture) videoTexture.dispose();
-
     videoElement = document.createElement('video');
     videoElement.src = URL.createObjectURL(file);
-    videoElement.loop = true;
-    videoElement.muted = true;
-    videoElement.playsInline = true;
+    videoElement.loop = true; videoElement.muted = true; videoElement.playsInline = true;
     videoElement.play();
-
     videoTexture = new THREE.VideoTexture(videoElement);
-    videoTexture.minFilter = THREE.LinearFilter;
-    videoTexture.magFilter = THREE.LinearFilter;
-    videoTexture.colorSpace = THREE.SRGBColorSpace;
-
-    setScreenTexture(videoTexture);
-    videoMode = true;
+    videoTexture.minFilter = THREE.LinearFilter; videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.colorSpace = THREE.SRGBColorSpace; videoTexture.flipY = false;
+    setScreenTexture(videoTexture); videoMode = true;
 }
 
-function switchToBounce() {
-    if (videoElement) {
-        videoElement.pause();
-        videoElement.src = '';
-        videoElement.remove();
-        videoElement = null;
-    }
-    if (videoTexture) {
-        videoTexture.dispose();
-        videoTexture = null;
-    }
-    setScreenTexture(renderTarget.texture);
-    videoMode = false;
+function switchToImage(file) {
+    if (videoElement) { videoElement.pause(); videoElement.src = ''; videoElement.remove(); videoElement = null; }
+    if (videoTexture) videoTexture.dispose();
+    const img = new Image();
+    img.onload = () => {
+        const tex = new THREE.Texture(img);
+        tex.needsUpdate = true; tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+        tex.colorSpace = THREE.SRGBColorSpace; tex.flipY = false;
+        videoTexture = tex; setScreenTexture(tex); videoMode = true;
+    };
+    img.src = URL.createObjectURL(file);
 }
 
-// Drag & drop overlay
+// ── Drag & Drop ─────────────────────────────────────────────────────
 const dropOverlay = document.createElement('div');
-dropOverlay.style.cssText = `
-    position: fixed; inset: 0; z-index: 999;
-    display: none; align-items: center; justify-content: center;
-    background: rgba(0, 107, 182, 0.3);
-    border: 4px dashed #F58426;
-    pointer-events: none;
-`;
-dropOverlay.innerHTML = '<div style="color:#fff;font:bold 28px Arial;text-shadow:0 2px 8px #000">Drop video to play on jumbotron</div>';
+dropOverlay.style.cssText = `position:fixed;inset:0;z-index:999;display:none;align-items:center;
+    justify-content:center;background:rgba(0,107,182,0.3);border:4px dashed #F58426;pointer-events:none;`;
+dropOverlay.innerHTML = '<div style="color:#fff;font:bold 28px Arial;text-shadow:0 2px 8px #000">Drop video or image</div>';
 document.body.appendChild(dropOverlay);
-
 let dragCounter = 0;
-
-document.addEventListener('dragenter', (e) => {
-    e.preventDefault();
-    dragCounter++;
-    dropOverlay.style.display = 'flex';
-});
-
-document.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    dragCounter--;
-    if (dragCounter <= 0) {
-        dragCounter = 0;
-        dropOverlay.style.display = 'none';
-    }
-});
-
-document.addEventListener('dragover', (e) => {
-    e.preventDefault();
-});
-
+document.addEventListener('dragenter', (e) => { e.preventDefault(); dragCounter++; dropOverlay.style.display = 'flex'; });
+document.addEventListener('dragleave', (e) => { e.preventDefault(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; dropOverlay.style.display = 'none'; } });
+document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dragCounter = 0;
-    dropOverlay.style.display = 'none';
-
+    e.preventDefault(); dragCounter = 0; dropOverlay.style.display = 'none';
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('video/')) {
-        switchToVideo(file);
-    }
+    if (!file) return;
+    if (file.type.startsWith('video/')) switchToVideo(file);
+    else if (file.type.startsWith('image/')) switchToImage(file);
 });
-
-// Tweakpane button to switch back
-ballFolder.addBlade({ view: 'separator' });
-ballFolder.addButton({ title: 'Back to Basketball' }).on('click', () => switchToBounce());
 </script>
 </body>
 </html>
