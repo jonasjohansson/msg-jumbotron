@@ -88,55 +88,86 @@ const lightFixtureMat = new THREE.ShaderMaterial({
 });
 
 // ── Screen Materials ────────────────────────────────────────────────
-const allScreenMaterials = [];
+const screenMaterialsMain = [];   // jumbotron — sharp
+const screenMaterialsSecondary = []; // banners + TV screens — blurred
+let allScreenMaterials = [];      // combined for legacy switchToVideo etc
 let defaultScreenTexture = null;
+let blurredTexture = null;
 let videoTexture = null;
 let videoElement = null;
 let videoMode = false;
 
+// Blurred canvas for secondary screens
+const blurCanvas = document.createElement('canvas');
+blurCanvas.width = 512;
+blurCanvas.height = 512;
+const blurCtx = blurCanvas.getContext('2d');
+blurCtx.filter = 'blur(12px)';
+const blurCanvasTex = new THREE.CanvasTexture(blurCanvas);
+blurCanvasTex.colorSpace = THREE.SRGBColorSpace;
+blurCanvasTex.flipY = false;
+
 function setScreenTexture(texture) {
-    allScreenMaterials.forEach(mat => {
+    // Main screens — sharp
+    screenMaterialsMain.forEach(mat => {
         mat.map = texture;
+        mat.color.set(0xffffff);
+        mat.needsUpdate = true;
+    });
+    // Secondary screens — blurred version
+    blurredTexture = texture;
+    screenMaterialsSecondary.forEach(mat => {
+        mat.map = blurCanvasTex;
         mat.color.set(0xffffff);
         mat.needsUpdate = true;
     });
 }
 
-// ── Load Arena (remove Center Screens — replaced by screens.glb) ───
+// ── Load Arena (v2 — screens UV'd in full scene as "CenterScreens" material) ──
 gltfLoader.load('models/MSG_Basketball_converted.glb', (gltf) => {
     const model = gltf.scene;
     model.scale.setScalar(0.3);
+    scene.add(model);
 
-    const toRemove = [];
     model.traverse((child) => {
         if (!child.isMesh) return;
+        const matName = child.material?.name || '';
+
         const name = child.name || '';
-        if (/Center_Screens/i.test(name)) toRemove.push(child);
-        if (/^Halogen_Lights|^Speakers/i.test(name)) child.material = lightFixtureMat;
+
+        // Hide Material #82 (old screen face with bad UVs, shows yellow rim)
+        if (matName === 'Material #82') {
+            child.visible = false;
+        }
+
+        // CenterScreens — the unified UV-mapped screen material (sharp)
+        if (matName === 'CenterScreens') {
+            const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            child.material = sMat;
+            screenMaterialsMain.push(sMat);
+        }
+
+        // Banners — blurred version (skip Black and structural materials)
+        if (/^Banners/i.test(name) && matName !== 'Black' && matName !== 'Navy Blue' && !/^Banner \d/i.test(matName) && !/^Logo/i.test(matName)) {
+            const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            child.material = sMat;
+            screenMaterialsSecondary.push(sMat);
+        }
+
+        // TV Screens — blurred version (skip Black and Chrome frames)
+        if (/^Tv_Screens|^TV_Screens/i.test(name) && matName !== 'Black' && matName !== 'Metal 1 (Chrome)') {
+            const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            child.material = sMat;
+            screenMaterialsSecondary.push(sMat);
+        }
+
+        // Halogen Lights & Speakers — emissive shader
+        if (/^Halogen_Lights|^Speakers/i.test(child.name || '')) {
+            child.material = lightFixtureMat;
+        }
     });
-    toRemove.forEach(m => { m.removeFromParent(); m.geometry.dispose(); });
-
-    scene.add(model);
-});
-
-// ── Load UV-Mapped Screens ──────────────────────────────────────────
-gltfLoader.load('models/screens.glb', (gltf) => {
-    const screens = gltf.scene;
-    screens.scale.setScalar(0.3);
-    scene.add(screens);
-
-    const backMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
-    screens.traverse((child) => {
-        if (!child.isMesh) return;
-        // Front: screen texture
-        const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-        child.material = sMat;
-        allScreenMaterials.push(sMat);
-        // Back: solid black
-        const backMesh = child.clone();
-        backMesh.material = backMat;
-        child.parent.add(backMesh);
-    });
+    allScreenMaterials = [...screenMaterialsMain, ...screenMaterialsSecondary];
+    console.log('Screens — main:', screenMaterialsMain.length, 'secondary:', screenMaterialsSecondary.length);
 
     // Load default test video
     const defaultVideo = document.createElement('video');
@@ -175,7 +206,7 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 
 const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.5, 0.8);
+    new THREE.Vector2(window.innerWidth, window.innerHeight), 0.40, 0.70, 0.80);
 composer.addPass(bloomPass);
 
 const cinemaShader = {
@@ -237,14 +268,14 @@ onResize();
 
 // ── Tweakpane ───────────────────────────────────────────────────────
 const params = {
-    ambientIntensity: 0.8, ambientColor: '#ffffff',
-    spotIntensity: 2.0, spotColor: '#ffffff',
-    bgColor: '#050508', fogDensity: 0.012, fogColor: '#0a0a10',
-    exposure: 0.8,
-    bloom: 0.4, bloomRadius: 0.5, bloomThreshold: 0.8,
-    grain: 0, chromatic: 0,
+    ambientIntensity: 3.0, ambientColor: '#000000',
+    spotIntensity: 0.0, spotColor: '#ffffff',
+    bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#0a0a10',
+    exposure: 0.55,
+    bloom: 0.40, bloomRadius: 0.70, bloomThreshold: 0.80,
+    grain: 0.100, chromatic: 0,
     saturation: 1.0, contrast: 1.0, brightness: 0,
-    lightFixtureIntensity: 1.5, lightFixtureColor: '#ffffff',
+    lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
 };
 
 const pane = new Pane({ title: 'MSG Jumbotron' });
@@ -321,6 +352,15 @@ function animate() {
     lightFixtureUniforms.time.value = elapsed;
     lightFixtureUniforms.intensity.value = params.lightFixtureIntensity;
     lightFixtureUniforms.color.value.set(params.lightFixtureColor);
+
+    // Update blurred texture for secondary screens
+    if (blurredTexture && blurredTexture.image) {
+        const src = blurredTexture.image;
+        if (src.videoWidth || src.width) {
+            blurCtx.drawImage(src, 0, 0, blurCanvas.width, blurCanvas.height);
+            blurCanvasTex.needsUpdate = true;
+        }
+    }
 
     controls.update();
     renderer.setRenderTarget(null);
