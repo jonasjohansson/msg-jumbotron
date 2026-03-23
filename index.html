@@ -339,35 +339,38 @@ function applyPreset(name) {
 pane.addButton({ title: 'Lit Environment' }).on('click', () => applyPreset('lit'));
 pane.addButton({ title: 'Dark Environment' }).on('click', () => applyPreset('dark'));
 
-const fxFolder = pane.addFolder({ title: 'Post FX', expanded: false });
-fxFolder.addBinding(params, 'bloom', { min: 0, max: 3, step: 0.05, label: 'Bloom' });
-fxFolder.addBinding(params, 'bloomRadius', { min: 0, max: 2, step: 0.05, label: 'Bloom Radius' });
-fxFolder.addBinding(params, 'bloomThreshold', { min: 0, max: 1.5, step: 0.05, label: 'Bloom Thresh' });
-fxFolder.addBlade({ view: 'separator' });
-fxFolder.addBinding(params, 'grain', { min: 0, max: 0.2, step: 0.005, label: 'Film Grain' });
-fxFolder.addBinding(params, 'chromatic', { min: 0, max: 0.02, step: 0.001, label: 'Chromatic Ab.' });
-fxFolder.addBlade({ view: 'separator' });
-fxFolder.addBinding(params, 'saturation', { min: 0, max: 2, step: 0.05, label: 'Saturation' });
-fxFolder.addBinding(params, 'contrast', { min: 0.5, max: 1.5, step: 0.01, label: 'Contrast' });
-fxFolder.addBinding(params, 'brightness', { min: -0.2, max: 0.2, step: 0.01, label: 'Brightness' });
+const bloomFolder = pane.addFolder({ title: 'Bloom', expanded: false });
+bloomFolder.addBinding(params, 'bloom', { min: 0, max: 3, step: 0.05, label: 'Strength' });
+bloomFolder.addBinding(params, 'bloomRadius', { min: 0, max: 2, step: 0.05, label: 'Radius' });
+bloomFolder.addBinding(params, 'bloomThreshold', { min: 0, max: 1.5, step: 0.05, label: 'Threshold' });
 
-const sceneFolder = pane.addFolder({ title: 'Scene', expanded: false });
-sceneFolder.addBinding(params, 'ambientIntensity', { min: 0, max: 3, step: 0.05, label: 'Ambient' });
-sceneFolder.addBinding(params, 'ambientColor', { label: 'Ambient Color' });
-sceneFolder.addBinding(params, 'spotIntensity', { min: 0, max: 5, step: 0.1, label: 'Spots' });
-sceneFolder.addBinding(params, 'spotColor', { label: 'Spot Color' });
-sceneFolder.addBinding(params, 'bgColor', { label: 'Background' });
-sceneFolder.addBinding(params, 'fogDensity', { min: 0, max: 0.05, step: 0.001, label: 'Fog Density' });
-sceneFolder.addBinding(params, 'fogColor', { label: 'Fog Color' });
-sceneFolder.addBinding(params, 'exposure', { min: 0.2, max: 3, step: 0.05, label: 'Exposure' });
+const colorFolder = pane.addFolder({ title: 'Color', expanded: false });
+colorFolder.addBinding(params, 'saturation', { min: 0, max: 2, step: 0.05, label: 'Saturation' });
+colorFolder.addBinding(params, 'contrast', { min: 0.5, max: 1.5, step: 0.01, label: 'Contrast' });
+colorFolder.addBinding(params, 'brightness', { min: -0.2, max: 0.2, step: 0.01, label: 'Brightness' });
+colorFolder.addBinding(params, 'exposure', { min: 0.2, max: 3, step: 0.05, label: 'Exposure' });
+
+const effectsFolder = pane.addFolder({ title: 'Effects', expanded: false });
+effectsFolder.addBinding(params, 'grain', { min: 0, max: 0.2, step: 0.005, label: 'Film Grain' });
+effectsFolder.addBinding(params, 'chromatic', { min: 0, max: 0.02, step: 0.001, label: 'Chromatic Ab.' });
+
+const lightingFolder = pane.addFolder({ title: 'Lighting', expanded: false });
+lightingFolder.addBinding(params, 'ambientIntensity', { min: 0, max: 3, step: 0.05, label: 'Ambient' });
+lightingFolder.addBinding(params, 'ambientColor', { label: 'Ambient Color' });
+lightingFolder.addBinding(params, 'spotIntensity', { min: 0, max: 5, step: 0.1, label: 'Spots' });
+lightingFolder.addBinding(params, 'spotColor', { label: 'Spot Color' });
 
 const fixtureFolder = pane.addFolder({ title: 'Light Fixtures', expanded: false });
 fixtureFolder.addBinding(params, 'lightFixtureIntensity', { min: 0, max: 5, step: 0.1, label: 'Intensity' });
 fixtureFolder.addBinding(params, 'lightFixtureColor', { label: 'Color' });
 
+const envFolder = pane.addFolder({ title: 'Environment', expanded: false });
+envFolder.addBinding(params, 'bgColor', { label: 'Background' });
+envFolder.addBinding(params, 'fogDensity', { min: 0, max: 0.05, step: 0.001, label: 'Fog Density' });
+envFolder.addBinding(params, 'fogColor', { label: 'Fog Color' });
+
 // ── Source Controls ─────────────────────────────────────────────────
 const sourceFolder = pane.addFolder({ title: 'Screen Source' });
-
 sourceFolder.addButton({ title: 'Default Test Video' }).on('click', () => {
     if (defaultScreenTexture) { setScreenTexture(defaultScreenTexture); videoMode = true; }
 });
