@@ -29,6 +29,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GammaCorrectionShader } from 'three/addons/shaders/GammaCorrectionShader.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
 
@@ -55,8 +57,6 @@ const BOUNCE = {
 };
 
 const BALL_RADIUS = 0.55;
-const SCREEN_W = 6;
-const SCREEN_H = SCREEN_W / (16 / 9);
 const JUMBOTRON_Y = 8;
 
 // ── Renderer ────────────────────────────────────────────────────────
@@ -506,137 +506,159 @@ controls.minDistance = 5;
 controls.maxDistance = 50;
 controls.update();
 
-// ── Arena: Floor (reflective court) ─────────────────────────────────
-const arenaFloorMat = new THREE.MeshStandardMaterial({
-    color: 0xB8864E,
-    roughness: 0.6,
-    metalness: 0.15,
-});
-const arenaFloor = new THREE.Mesh(new THREE.PlaneGeometry(60, 40), arenaFloorMat);
-arenaFloor.rotation.x = -Math.PI / 2;
-arenaScene.add(arenaFloor);
-
-// Court markings on arena floor
-const courtLineMat2 = new THREE.MeshBasicMaterial({ color: COLORS.knickOrange });
-const arenaCircle = new THREE.Mesh(new THREE.RingGeometry(1.8, 1.95, 64), courtLineMat2);
-arenaCircle.rotation.x = -Math.PI / 2;
-arenaCircle.position.y = 0.01;
-arenaScene.add(arenaCircle);
-
-// Half-court line
-const halfLine = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.08, 20),
-    courtLineMat2
-);
-halfLine.rotation.x = -Math.PI / 2;
-halfLine.position.y = 0.01;
-arenaScene.add(halfLine);
-
-// Court boundary
-const courtBound = new THREE.Mesh(
-    new THREE.RingGeometry(14.5, 14.6, 4),
-    new THREE.MeshBasicMaterial({ color: COLORS.knickOrange, side: THREE.DoubleSide })
-);
-courtBound.rotation.x = -Math.PI / 2;
-courtBound.position.y = 0.01;
-arenaScene.add(courtBound);
-
-// ── Arena: Seating bowl ─────────────────────────────────────────────
-const tierMat = new THREE.MeshStandardMaterial({ color: 0x1a2744, roughness: 0.9 });
-const tierRows = 8;
-for (let row = 0; row < tierRows; row++) {
-    const innerR = 18 + row * 2.5;
-    const outerR = innerR + 2.2;
-    const tierHeight = 1 + row * 1.5;
-    const tierGeo = new THREE.RingGeometry(innerR, outerR, 48);
-    const tierMesh = new THREE.Mesh(tierGeo, tierMat);
-    tierMesh.rotation.x = -Math.PI / 2;
-    tierMesh.position.y = tierHeight;
-    arenaScene.add(tierMesh);
-
-    // Vertical face
-    if (row === 0) continue;
-    const faceMat = new THREE.MeshStandardMaterial({ color: 0x12203a });
-    const faceGeo = new THREE.CylinderGeometry(innerR, innerR, tierHeight - (1 + (row - 1) * 1.5), 48, 1, true);
-    const face = new THREE.Mesh(faceGeo, faceMat);
-    face.position.y = (tierHeight + (1 + (row - 1) * 1.5)) / 2;
-    arenaScene.add(face);
-}
-
-// ── Arena: Jumbotron ────────────────────────────────────────────────
-const jumbotronGroup = new THREE.Group();
-jumbotronGroup.position.y = JUMBOTRON_Y;
-arenaScene.add(jumbotronGroup);
+// ── Arena: Load 3D Model ────────────────────────────────────────────
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/');
+const gltfLoader = new GLTFLoader();
+gltfLoader.setDRACOLoader(dracoLoader);
 
 const screenMat = new THREE.MeshBasicMaterial({ map: renderTarget.texture });
 
-const frameW = SCREEN_W + 0.4;
-const frameH = SCREEN_H + 0.4;
-const frameD = SCREEN_W + 0.4;
-const frameMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.3 });
-const frameBox = new THREE.Mesh(new THREE.BoxGeometry(frameW, frameH, frameD), frameMat);
-jumbotronGroup.add(frameBox);
+// Material names on Center Screens that should display the render target
+const SCREEN_MAT_NAMES = ['Main Screen', 'Score Screen', 'Big Screen Text', 'Big Screen Logo 1', 'Big Screen Logo 2'];
 
-// 4 screens
-const screenGeo = new THREE.PlaneGeometry(SCREEN_W, SCREEN_H);
-
-const screenFront = new THREE.Mesh(screenGeo, screenMat);
-screenFront.position.z = frameD / 2 + 0.01;
-jumbotronGroup.add(screenFront);
-
-const screenBack = new THREE.Mesh(screenGeo, screenMat.clone());
-screenBack.position.z = -frameD / 2 - 0.01;
-screenBack.rotation.y = Math.PI;
-jumbotronGroup.add(screenBack);
-
-const screenRight = new THREE.Mesh(screenGeo, screenMat.clone());
-screenRight.position.x = frameW / 2 + 0.01;
-screenRight.rotation.y = Math.PI / 2;
-jumbotronGroup.add(screenRight);
-
-const screenLeft = new THREE.Mesh(screenGeo, screenMat.clone());
-screenLeft.position.x = -frameW / 2 - 0.01;
-screenLeft.rotation.y = -Math.PI / 2;
-jumbotronGroup.add(screenLeft);
-
-// Suspension cables
-const cableMat = new THREE.MeshBasicMaterial({ color: 0x444444 });
-const cableGeo = new THREE.CylinderGeometry(0.04, 0.04, 14, 8);
-[[-2.5, 2.5], [2.5, 2.5], [-2.5, -2.5], [2.5, -2.5]].forEach(([x, z]) => {
-    const cable = new THREE.Mesh(cableGeo, cableMat);
-    cable.position.set(x, frameH / 2 + 7, z);
-    jumbotronGroup.add(cable);
+// Emissive material for light fixtures (Halogen Lights, etc.)
+const lightFixtureUniforms = {
+    color: { value: new THREE.Color(0xffffff) },
+    intensity: { value: 1.5 },
+    time: { value: 0 },
+};
+const lightFixtureMat = new THREE.ShaderMaterial({
+    uniforms: lightFixtureUniforms,
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform vec3 color;
+        uniform float intensity;
+        uniform float time;
+        varying vec2 vUv;
+        void main() {
+            // Subtle pulse
+            float pulse = 0.95 + 0.05 * sin(time * 2.0);
+            gl_FragColor = vec4(color * intensity * pulse, 1.0);
+        }
+    `,
 });
 
-// Simple trim strips (static)
-const trimMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5 });
-const trimTop = new THREE.Mesh(new THREE.BoxGeometry(frameW + 0.2, 0.12, frameD + 0.2), trimMat);
-trimTop.position.y = frameH / 2;
-jumbotronGroup.add(trimTop);
-const trimBot = new THREE.Mesh(new THREE.BoxGeometry(frameW + 0.2, 0.12, frameD + 0.2), trimMat);
-trimBot.position.y = -frameH / 2;
-jumbotronGroup.add(trimBot);
+// Track all screen materials for video swap
+const allScreenMaterials = [];
 
-// ── Arena: Lighting (well-lit stadium) ──────────────────────────────
-arenaScene.add(new THREE.AmbientLight(0xffffff, 0.6));
+// Recompute UVs for a screen mesh using planar projection
+// Determines the dominant face direction from normals, then projects
+// positions onto the two perpendicular axes, normalized to 0–1.
+function recomputeScreenUVs(mesh) {
+    const geo = mesh.geometry;
+    const pos = geo.attributes.position;
+    const norm = geo.attributes.normal;
+    if (!pos || !norm) return;
 
-// Multiple overhead arena lights
-const arenaSpot1 = new THREE.SpotLight(0xffffff, 2.0, 80, Math.PI / 4, 0.5);
-arenaSpot1.position.set(0, 30, 0);
+    // Find average normal to determine face direction
+    const avgNormal = new THREE.Vector3();
+    for (let i = 0; i < norm.count; i++) {
+        avgNormal.x += Math.abs(norm.getX(i));
+        avgNormal.y += Math.abs(norm.getY(i));
+        avgNormal.z += Math.abs(norm.getZ(i));
+    }
+
+    // Determine which two axes to project onto (the two with smallest avg normal)
+    const nx = avgNormal.x, ny = avgNormal.y, nz = avgNormal.z;
+    let axisU, axisV;
+    if (nx >= ny && nx >= nz) {
+        // Face points along X → project onto Z (u) and Y (v)
+        axisU = 'z'; axisV = 'y';
+    } else if (nz >= nx && nz >= ny) {
+        // Face points along Z → project onto X (u) and Y (v)
+        axisU = 'x'; axisV = 'y';
+    } else {
+        // Face points along Y → project onto X (u) and Z (v)
+        axisU = 'x'; axisV = 'z';
+    }
+
+    const getComp = (i, axis) => {
+        if (axis === 'x') return pos.getX(i);
+        if (axis === 'y') return pos.getY(i);
+        return pos.getZ(i);
+    };
+
+    // Find bounds
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+        const u = getComp(i, axisU), v = getComp(i, axisV);
+        if (u < minU) minU = u; if (u > maxU) maxU = u;
+        if (v < minV) minV = v; if (v > maxV) maxV = v;
+    }
+
+    const rangeU = maxU - minU || 1;
+    const rangeV = maxV - minV || 1;
+
+    // Write new UVs
+    const uvs = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+        uvs[i * 2] = (getComp(i, axisU) - minU) / rangeU;
+        uvs[i * 2 + 1] = (getComp(i, axisV) - minV) / rangeV;
+    }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+}
+
+gltfLoader.load('models/MSG_Basketball_converted.glb', (gltf) => {
+    const model = gltf.scene;
+    model.scale.setScalar(0.3);
+    arenaScene.add(model);
+
+    model.traverse((child) => {
+        if (!child.isMesh) return;
+        const name = child.name || '';
+
+        // Center Screens — swap screen-face materials with render target
+        // Meshes are split as Center_Screens_1 through _7, one material each
+        if (/^Center_Screens_/i.test(name)) {
+            const mat = child.material;
+            if (mat.name !== 'Black' && !/Service/i.test(mat.name)) {
+                // Recompute UVs via planar projection based on dominant normal
+                recomputeScreenUVs(child);
+                const sMat = new THREE.MeshBasicMaterial({ map: renderTarget.texture });
+                child.material = sMat;
+                allScreenMaterials.push(sMat);
+            }
+        }
+
+        // Halogen Lights & Speakers — emissive shader
+        if (/^Halogen_Lights|^Speakers/i.test(name)) {
+            child.material = lightFixtureMat;
+        }
+
+        // TV Screens around the arena — also show render target
+        if (/^Tv_Screens|^TV_Screens/i.test(name) && !/Center/i.test(name)) {
+            const mat = child.material;
+            if (mat.name !== 'Black') {
+                recomputeScreenUVs(child);
+                const sMat = new THREE.MeshBasicMaterial({ map: renderTarget.texture });
+                child.material = sMat;
+                allScreenMaterials.push(sMat);
+            }
+        }
+    });
+});
+
+// ── Arena: Lighting (simple — model has geometry, not real lights) ───
+arenaScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+const arenaSpot1 = new THREE.SpotLight(0xffffff, 2.0, 120, Math.PI / 3, 0.5);
+arenaSpot1.position.set(0, 40, 0);
 arenaScene.add(arenaSpot1);
 
-const arenaSpot2 = new THREE.SpotLight(0xffffff, 1.0, 60, Math.PI / 3, 0.6);
-arenaSpot2.position.set(15, 25, 15);
+const arenaSpot2 = new THREE.SpotLight(0xffffff, 1.0, 80, Math.PI / 3, 0.6);
+arenaSpot2.position.set(20, 30, 20);
 arenaScene.add(arenaSpot2);
 
-const arenaSpot3 = new THREE.SpotLight(0xffffff, 1.0, 60, Math.PI / 3, 0.6);
-arenaSpot3.position.set(-15, 25, -15);
+const arenaSpot3 = new THREE.SpotLight(0xffffff, 1.0, 80, Math.PI / 3, 0.6);
+arenaSpot3.position.set(-20, 30, -20);
 arenaScene.add(arenaSpot3);
-
-// Screen glow
-const screenGlow = new THREE.PointLight(0xaaccff, 1.0, 15);
-screenGlow.position.set(0, JUMBOTRON_Y, 0);
-arenaScene.add(screenGlow);
 
 // ── Post-processing ─────────────────────────────────────────────────
 const composer = new EffectComposer(renderer);
@@ -769,6 +791,8 @@ const params = {
     rightWall: rightLight.intensity,
     ceilingLt: ceilingLight.intensity,
     blueEdge: edgeL.intensity,
+    lightFixtureIntensity: 1.5,
+    lightFixtureColor: '#ffffff',
     showWireframe: false,
     showAxes: false,
     debugWalls: false,
@@ -820,6 +844,10 @@ fxFolder.addBinding(params, 'brightness', { min: -0.2, max: 0.2, step: 0.01, lab
 fxFolder.addBlade({ view: 'separator' });
 fxFolder.addBinding(params, 'fogNear', { min: 0, max: 30, step: 0.5, label: 'Fog Near' });
 fxFolder.addBinding(params, 'fogFar', { min: 2, max: 50, step: 0.5, label: 'Fog Far' });
+
+const fixtureFolder = pane.addFolder({ title: 'Light Fixtures' });
+fixtureFolder.addBinding(params, 'lightFixtureIntensity', { min: 0, max: 5, step: 0.1, label: 'Intensity' });
+fixtureFolder.addBinding(params, 'lightFixtureColor', { label: 'Color' });
 
 const debugFolder = pane.addFolder({ title: 'Debug', expanded: false });
 debugFolder.addBinding(params, 'showWireframe', { label: 'Room wireframe' });
@@ -893,6 +921,11 @@ function animate() {
         ceilingMat.color.setHex(0x0a1a3a);
     }
 
+    // Light fixtures shader
+    lightFixtureUniforms.time.value = elapsed;
+    lightFixtureUniforms.intensity.value = params.lightFixtureIntensity;
+    lightFixtureUniforms.color.value.set(params.lightFixtureColor);
+
     updateAllBalls(dt);
     controls.update();
 
@@ -919,15 +952,9 @@ renderer.domElement.addEventListener('dblclick', () => {
 });
 
 // ── Video Drag & Drop ───────────────────────────────────────────────
-const allScreenMats = [
-    screenFront.material,
-    screenBack.material,
-    screenRight.material,
-    screenLeft.material,
-];
-
 function setScreenTexture(texture) {
-    allScreenMats.forEach(mat => { mat.map = texture; mat.needsUpdate = true; });
+    console.log('setScreenTexture called, materials count:', allScreenMaterials.length);
+    allScreenMaterials.forEach(mat => { mat.map = texture; mat.needsUpdate = true; });
 }
 
 function switchToVideo(file) {
