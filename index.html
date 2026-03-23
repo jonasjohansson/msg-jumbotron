@@ -36,7 +36,7 @@ import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpan
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setClearColor(0x050508);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.8;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 // ── Scene ───────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 
 const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight), 0.40, 0.70, 0.80);
+    new THREE.Vector2(window.innerWidth, window.innerHeight), 0.20, 0.60, 0.15);
 composer.addPass(bloomPass);
 
 const cinemaShader = {
@@ -268,17 +268,50 @@ onResize();
 
 // ── Tweakpane ───────────────────────────────────────────────────────
 const params = {
-    ambientIntensity: 3.0, ambientColor: '#000000',
+    ambientIntensity: 0.85, ambientColor: '#ffffff',
     spotIntensity: 0.0, spotColor: '#ffffff',
-    bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#0a0a10',
-    exposure: 0.55,
-    bloom: 0.40, bloomRadius: 0.70, bloomThreshold: 0.80,
-    grain: 0.100, chromatic: 0,
-    saturation: 1.0, contrast: 1.0, brightness: 0,
+    bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#000000',
+    exposure: 1.0,
+    bloom: 0.20, bloomRadius: 0.60, bloomThreshold: 0.15,
+    grain: 0.060, chromatic: 0,
+    saturation: 1.35, contrast: 1.50, brightness: 0,
     lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
 };
 
 const pane = new Pane({ title: 'MSG Jumbotron' });
+
+// Presets
+const presets = {
+    lit: {
+        ambientIntensity: 0.85, ambientColor: '#ffffff',
+        spotIntensity: 0.0, spotColor: '#ffffff',
+        bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#000000',
+        exposure: 1.0,
+        bloom: 0.20, bloomRadius: 0.60, bloomThreshold: 0.15,
+        grain: 0.020, chromatic: 0,
+        saturation: 1.35, contrast: 1.50, brightness: 0,
+        lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
+    },
+    dark: {
+        ambientIntensity: 3.0, ambientColor: '#000000',
+        spotIntensity: 0.0, spotColor: '#ffffff',
+        bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#0a0a10',
+        exposure: 0.55,
+        bloom: 0.40, bloomRadius: 0.70, bloomThreshold: 0.80,
+        grain: 0.045, chromatic: 0,
+        saturation: 1.0, contrast: 1.0, brightness: 0,
+        lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
+    },
+};
+
+function applyPreset(name) {
+    const p = presets[name];
+    Object.assign(params, p);
+    pane.refresh();
+}
+
+pane.addButton({ title: 'Lit Environment' }).on('click', () => applyPreset('lit'));
+pane.addButton({ title: 'Dark Environment' }).on('click', () => applyPreset('dark'));
 
 const fxFolder = pane.addFolder({ title: 'Post FX', expanded: false });
 fxFolder.addBinding(params, 'bloom', { min: 0, max: 3, step: 0.05, label: 'Bloom' });
@@ -367,6 +400,54 @@ function animate() {
     composer.render();
 }
 animate();
+
+// ── Scene Cameras (from FBX) ────────────────────────────────────────
+// Positions from the model, scaled by 0.3 to match arena scale
+const sceneCameras = [
+    { name: 'Free Camera', pos: null }, // 0 = current orbit cam
+    { name: 'Camera01 — Wide Left',   pos: [-48.076, 13.103, 22.678], rot: [-0.329, -0.627, -0.007, 0.853] },
+    { name: 'Camera002 — Behind',     pos: [19.163, 11.432, -35.276], rot: [-0.449, 0.0, 0.0, 0.009] },
+    { name: 'Camera003 — Right Side', pos: [47.339, 7.800, -8.217], rot: [0.0, 0.013, -0.022, 0.629] },
+    { name: 'Camera004 — Right Front',pos: [44.865, 7.331, 13.639], rot: [0.0, 0.020, -0.023, 0.790] },
+    { name: 'Camera005 — Low Left',   pos: [-30.290, 3.304, 13.108], rot: [0.150, -0.510, 0.091, 0.842] },
+    { name: 'Camera001 — High Right', pos: [43.361, 12.061, -26.636], rot: [0.0, 0.008, -0.016, 0.426] },
+];
+
+const ARENA_SCALE = 0.3;
+let savedFreePos = null;
+let savedFreeTarget = null;
+
+function switchToCamera(index) {
+    const cam = sceneCameras[index];
+    if (!cam) return;
+    if (index === 0) {
+        // Restore free camera
+        if (savedFreePos) {
+            camera.position.copy(savedFreePos);
+            controls.target.copy(savedFreeTarget);
+        }
+        controls.enabled = true;
+        return;
+    }
+    // Save free camera state
+    if (controls.enabled) {
+        savedFreePos = camera.position.clone();
+        savedFreeTarget = controls.target.clone();
+    }
+    // Apply scene camera (scaled), always look at jumbotron center
+    const p = cam.pos;
+    camera.position.set(p[0] * ARENA_SCALE, p[1] * ARENA_SCALE, p[2] * ARENA_SCALE);
+    controls.target.set(0, 7, 0); // jumbotron center
+    controls.enabled = true;
+    controls.update();
+}
+
+document.addEventListener('keydown', (e) => {
+    const idx = parseInt(e.key);
+    if (!isNaN(idx) && idx >= 0 && idx <= 6) {
+        switchToCamera(idx);
+    }
+});
 
 // ── Fullscreen ──────────────────────────────────────────────────────
 renderer.domElement.addEventListener('dblclick', () => {
