@@ -227,6 +227,114 @@ const arenaSpot3 = new THREE.SpotLight(0xffffff, 1.0, 80, Math.PI / 3, 0.6);
 arenaSpot3.position.set(-20, 30, -20);
 scene.add(arenaSpot3);
 
+// ── Laser Beams ────────────────────────────────────────────────────
+const MAX_EMITTERS = 25;
+const MAX_BEAMS_PER_GROUP = MAX_EMITTERS * 3; // main + up to 2 extras per emitter
+
+function createLaserGroup() {
+    const group = new THREE.Group();
+    scene.add(group);
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0xff6600,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        toneMapped: false,
+    });
+    const beams = [];
+    for (let i = 0; i < MAX_BEAMS_PER_GROUP; i++) {
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(3 * 3);
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setIndex([0, 1, 2]);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.frustumCulled = false;
+        mesh.visible = false;
+        group.add(mesh);
+        beams.push(mesh);
+    }
+    return { group, mat, beams };
+}
+
+function updateLaserGroup(lg, p, elapsed) {
+    const pulseCycle = p.pulseOn + p.pulseOff;
+    const pulseVisible = pulseCycle <= 0 || (elapsed % pulseCycle) < p.pulseOn;
+    if (p.enabled && p.count > 0 && pulseVisible) {
+        const lColor = new THREE.Color(p.color);
+        lColor.multiplyScalar(p.intensity);
+        lg.mat.color.copy(lColor);
+        lg.mat.opacity = p.opacity;
+
+        const t = (elapsed % p.timer) / p.timer;
+        const sweepAngle = t * Math.PI * 2;
+        const animX = Math.sin(sweepAngle);
+        const animY = Math.cos(sweepAngle);
+
+        const beamsPerEmitter = 1 + p.extra;
+        const halfW = p.width / 2;
+        const extraOffsets = [0, p.extra1Offset, p.extra2Offset];
+        let meshIdx = 0;
+
+        for (let i = 0; i < MAX_EMITTERS; i++) {
+            if (i >= p.count) {
+                for (let e = 0; e < 3; e++) {
+                    if (meshIdx < MAX_BEAMS_PER_GROUP) lg.beams[meshIdx++].visible = false;
+                }
+                continue;
+            }
+
+            const angle = (i / p.count) * Math.PI * 2 + p.rotation * (Math.PI / 180);
+            const emitX = Math.cos(angle) * p.radius;
+            const emitZ = Math.sin(angle) * p.radius;
+            const emitY = p.height;
+
+            const tanX = -Math.sin(angle);
+            const tanZ = Math.cos(angle);
+
+            for (let e = 0; e < 3; e++) {
+                const mesh = lg.beams[meshIdx++];
+                if (e >= beamsPerEmitter) { mesh.visible = false; continue; }
+                mesh.visible = true;
+
+                const extraOff = extraOffsets[e];
+                const fullX = tanX * (p.baseX + extraOff + p.targetX * animX);
+                const fullY = 7.0 + p.baseY + p.targetY * animY;
+                const fullZ = tanZ * (p.baseX + extraOff + p.targetX * animX);
+
+                const bRad = p.beamRotation * (Math.PI / 180);
+                const cosB = Math.cos(bRad), sinB = Math.sin(bRad);
+                const dx = fullX - emitX, dz = fullZ - emitZ;
+                const rFullX = emitX + dx * cosB - dz * sinB;
+                const rFullZ = emitZ + dx * sinB + dz * cosB;
+
+                const len = p.length;
+                const targetX = emitX + (rFullX - emitX) * len;
+                const targetY = emitY + (fullY - emitY) * len;
+                const targetZ = emitZ + (rFullZ - emitZ) * len;
+
+                const bx = targetX - emitX, bz = targetZ - emitZ;
+                const crossLen = Math.sqrt(bz * bz + bx * bx) || 0.001;
+                const twx = (bz / crossLen) * halfW;
+                const twz = (-bx / crossLen) * halfW;
+
+                const pos = mesh.geometry.attributes.position.array;
+                pos[0] = emitX; pos[1] = emitY; pos[2] = emitZ;
+                pos[3] = targetX - twx; pos[4] = targetY; pos[5] = targetZ - twz;
+                pos[6] = targetX + twx; pos[7] = targetY; pos[8] = targetZ + twz;
+                mesh.geometry.attributes.position.needsUpdate = true;
+            }
+        }
+        while (meshIdx < MAX_BEAMS_PER_GROUP) lg.beams[meshIdx++].visible = false;
+    } else {
+        for (let i = 0; i < MAX_BEAMS_PER_GROUP; i++) lg.beams[i].visible = false;
+    }
+}
+
+const laserGroup1 = createLaserGroup();
+const laserGroup2 = createLaserGroup();
+
 // ── Post-Processing ─────────────────────────────────────────────────
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -302,7 +410,30 @@ const params = {
     grain: 0.060, chromatic: 0,
     saturation: 1.35, contrast: 1.50, brightness: 0,
     lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
+    // Laser Group 1
+    l1_enabled: true, l1_count: 25, l1_color: '#ff6600',
+    l1_intensity: 2.0, l1_opacity: 0.6, l1_width: 0.15, l1_timer: 10.0,
+    l1_baseX: 0.0, l1_baseY: 0.0, l1_targetX: 0.0, l1_targetY: 0.0,
+    l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
+    l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1.0,
+    l1_rotation: 0.0, l1_beamRotation: 0.0, l1_radius: 14.0, l1_height: 3.2,
+    // Laser Group 2
+    l2_enabled: false, l2_count: 4, l2_color: '#0066ff',
+    l2_intensity: 2.0, l2_opacity: 0.6, l2_width: 0.15, l2_timer: 10.0,
+    l2_baseX: 0.0, l2_baseY: 0.0, l2_targetX: 0.0, l2_targetY: 0.0,
+    l2_length: 1.0, l2_pulseOn: 1.0, l2_pulseOff: 0.0,
+    l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1.0,
+    l2_rotation: 0.0, l2_beamRotation: 0.0, l2_radius: 14.0, l2_height: 7.4,
 };
+
+// Load saved settings
+try {
+    const saved = localStorage.getItem('msg-jumbotron-settings');
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        Object.assign(params, parsed);
+    }
+} catch (e) { console.warn('Could not load settings:', e); }
 
 const pane = new Pane({ title: 'MSG Jumbotron', expanded: false });
 
@@ -317,6 +448,16 @@ const presets = {
         grain: 0.020, chromatic: 0,
         saturation: 1.35, contrast: 1.50, brightness: 0,
         lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
+        l1_enabled: false, l1_count: 25, l1_color: '#ff6600', l1_intensity: 2.0, l1_opacity: 0.6,
+        l1_width: 0.15, l1_timer: 10.0, l1_baseX: 0.0, l1_baseY: 0.0, l1_targetX: 0.0, l1_targetY: 0.0,
+        l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
+        l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1.0,
+        l1_rotation: 0.0, l1_beamRotation: 0.0, l1_radius: 14.0, l1_height: 3.2,
+        l2_enabled: false, l2_count: 4, l2_color: '#0066ff', l2_intensity: 2.0, l2_opacity: 0.6,
+        l2_width: 0.15, l2_timer: 10.0, l2_baseX: 0.0, l2_baseY: 0.0, l2_targetX: 0.0, l2_targetY: 0.0,
+        l2_length: 1.0, l2_pulseOn: 1.0, l2_pulseOff: 0.0,
+        l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1.0,
+        l2_rotation: 0.0, l2_beamRotation: 0.0, l2_radius: 14.0, l2_height: 7.4,
     },
     dark: {
         ambientIntensity: 3.0, ambientColor: '#000000',
@@ -327,6 +468,16 @@ const presets = {
         grain: 0.045, chromatic: 0,
         saturation: 1.0, contrast: 1.0, brightness: 0,
         lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
+        l1_enabled: true, l1_count: 25, l1_color: '#ff6600', l1_intensity: 3.0, l1_opacity: 0.6,
+        l1_width: 0.15, l1_timer: 10.0, l1_baseX: 0.0, l1_baseY: 0.0, l1_targetX: 0.0, l1_targetY: 0.0,
+        l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
+        l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1.0,
+        l1_rotation: 0.0, l1_beamRotation: 0.0, l1_radius: 14.0, l1_height: 3.2,
+        l2_enabled: true, l2_count: 4, l2_color: '#0066ff', l2_intensity: 3.0, l2_opacity: 0.6,
+        l2_width: 0.15, l2_timer: 10.0, l2_baseX: 0.0, l2_baseY: 0.0, l2_targetX: 0.0, l2_targetY: 0.0,
+        l2_length: 1.0, l2_pulseOn: 1.0, l2_pulseOff: 0.0,
+        l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1.0,
+        l2_rotation: 0.0, l2_beamRotation: 0.0, l2_radius: 14.0, l2_height: 7.4,
     },
 };
 
@@ -368,6 +519,68 @@ const envFolder = pane.addFolder({ title: 'Environment', expanded: false });
 envFolder.addBinding(params, 'bgColor', { label: 'Background' });
 envFolder.addBinding(params, 'fogDensity', { min: 0, max: 0.05, step: 0.001, label: 'Fog Density' });
 envFolder.addBinding(params, 'fogColor', { label: 'Fog Color' });
+
+function addLaserFolder(pane, prefix, title, maxCount) {
+    maxCount = maxCount || MAX_EMITTERS;
+    const f = pane.addFolder({ title, expanded: false });
+    const k = (name) => `${prefix}_${name}`;
+    f.addBinding(params, k('enabled'), { label: 'Enabled' });
+    f.addBinding(params, k('count'), { min: 0, max: maxCount, step: 1, label: 'Beam Count' });
+    f.addBinding(params, k('color'), { label: 'Color' });
+    f.addBinding(params, k('intensity'), { min: 0.5, max: 5, step: 0.1, label: 'Intensity' });
+    f.addBinding(params, k('opacity'), { min: 0.05, max: 1.0, step: 0.05, label: 'Opacity' });
+    f.addBinding(params, k('width'), { min: 0.01, max: 2.0, step: 0.01, label: 'Beam Width' });
+    f.addBinding(params, k('timer'), { min: 1, max: 30, step: 0.5, label: 'Sweep Time (s)' });
+    f.addBinding(params, k('baseX'), { min: -8, max: 8, step: 0.1, label: 'Base X' });
+    f.addBinding(params, k('baseY'), { min: -8, max: 8, step: 0.1, label: 'Base Y' });
+    f.addBinding(params, k('targetX'), { min: -8, max: 8, step: 0.1, label: 'Sweep X' });
+    f.addBinding(params, k('targetY'), { min: -8, max: 8, step: 0.1, label: 'Sweep Y' });
+    f.addBinding(params, k('length'), { min: 0.05, max: 2.0, step: 0.05, label: 'Beam Length' });
+    f.addBinding(params, k('pulseOn'), { min: 0.01, max: 5.0, step: 0.01, label: 'Pulse On (s)' });
+    f.addBinding(params, k('pulseOff'), { min: 0.0, max: 5.0, step: 0.01, label: 'Pulse Off (s)' });
+    f.addBinding(params, k('extra'), { min: 0, max: 2, step: 1, label: 'Extra Beams' });
+    f.addBinding(params, k('extra1Offset'), { min: -3, max: 3, step: 0.05, label: 'Extra 1 Offset' });
+    f.addBinding(params, k('extra2Offset'), { min: -3, max: 3, step: 0.05, label: 'Extra 2 Offset' });
+    f.addBinding(params, k('rotation'), { min: -180, max: 180, step: 1, label: 'Rotate Origin (°)' });
+    f.addBinding(params, k('beamRotation'), { min: -180, max: 180, step: 1, label: 'Beam Rotation (°)' });
+    f.addBinding(params, k('radius'), { min: 6, max: 25, step: 0.5, label: 'Ring Radius' });
+    f.addBinding(params, k('height'), { min: 0, max: 18, step: 0.1, label: 'Ring Height' });
+    return f;
+}
+addLaserFolder(pane, 'l1', 'Laser Group 1');
+addLaserFolder(pane, 'l2', 'Laser Group 2', 4);
+
+// ── Settings Save/Load ──────────────────────────────────────────────
+pane.addButton({ title: 'Save Settings' }).on('click', () => {
+    localStorage.setItem('msg-jumbotron-settings', JSON.stringify(params));
+    // Also download as file
+    const blob = new Blob([JSON.stringify(params, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'msg-jumbotron-settings.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+});
+pane.addButton({ title: 'Load Settings File' }).on('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.txt';
+    input.onchange = () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const loaded = JSON.parse(reader.result);
+                Object.assign(params, loaded);
+                localStorage.setItem('msg-jumbotron-settings', JSON.stringify(params));
+                pane.refresh();
+            } catch (e) { console.error('Invalid settings file:', e); }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+});
 
 // ── Source Controls ─────────────────────────────────────────────────
 const sourceFolder = pane.addFolder({ title: 'Screen Source' });
@@ -414,6 +627,23 @@ function animate() {
     lightFixtureUniforms.time.value = elapsed;
     lightFixtureUniforms.intensity.value = params.lightFixtureIntensity;
     lightFixtureUniforms.color.value.set(params.lightFixtureColor);
+
+    // Lasers
+    function getLaserParams(prefix) {
+        const k = (name) => params[`${prefix}_${name}`];
+        return {
+            enabled: k('enabled'), count: k('count'), color: k('color'),
+            intensity: k('intensity'), opacity: k('opacity'), width: k('width'),
+            timer: k('timer'), baseX: k('baseX'), baseY: k('baseY'),
+            targetX: k('targetX'), targetY: k('targetY'), length: k('length'),
+            pulseOn: k('pulseOn'), pulseOff: k('pulseOff'),
+            extra: k('extra'), extra1Offset: k('extra1Offset'), extra2Offset: k('extra2Offset'),
+            rotation: k('rotation'), beamRotation: k('beamRotation'),
+            radius: k('radius'), height: k('height'),
+        };
+    }
+    updateLaserGroup(laserGroup1, getLaserParams('l1'), elapsed);
+    updateLaserGroup(laserGroup2, getLaserParams('l2'), elapsed);
 
     // Update blurred texture for secondary screens
     if (blurredTexture && blurredTexture.image) {
