@@ -35,6 +35,12 @@
         @media (pointer: coarse) {
             #cam-bar { display: flex; }
         }
+        #preset-label {
+            position: fixed; bottom: 8px; right: 8px; z-index: 50;
+            color: rgba(255,255,255,0.5);
+            font: 13px -apple-system, sans-serif;
+            pointer-events: none;
+        }
     </style>
     <script type="importmap">
     {
@@ -428,12 +434,12 @@ const params = {
 
 // Load saved settings
 try {
-    const saved = localStorage.getItem('msg-jumbotron-settings');
+    const saved = localStorage.getItem('msg-jumbotron-concept');
     if (saved) {
         const parsed = JSON.parse(saved);
         Object.assign(params, parsed);
     }
-} catch (e) { console.warn('Could not load settings:', e); }
+} catch (e) { console.warn('Could not load concept:', e); }
 
 const pane = new Pane({ title: 'MSG Jumbotron', expanded: false });
 
@@ -551,17 +557,32 @@ addLaserFolder(pane, 'l1', 'Laser Group 1');
 addLaserFolder(pane, 'l2', 'Laser Group 2', 4);
 
 // ── Settings Save/Load ──────────────────────────────────────────────
-pane.addButton({ title: 'Save Settings' }).on('click', () => {
-    localStorage.setItem('msg-jumbotron-settings', JSON.stringify(params));
-    // Also download as file
-    const blob = new Blob([JSON.stringify(params, null, 2)], { type: 'application/json' });
+const presetLabel = document.createElement('div');
+presetLabel.id = 'preset-label';
+document.body.appendChild(presetLabel);
+
+// Restore preset name from localStorage
+const savedPresetName = localStorage.getItem('msg-jumbotron-concept-name');
+if (savedPresetName) presetLabel.textContent = savedPresetName;
+
+function setPresetName(name) {
+    presetLabel.textContent = name;
+    localStorage.setItem('msg-jumbotron-concept-name', name);
+}
+
+pane.addButton({ title: 'Save Concept' }).on('click', () => {
+    const name = prompt('Concept name:', savedPresetName || 'My Concept');
+    if (!name) return;
+    setPresetName(name);
+    localStorage.setItem('msg-jumbotron-concept', JSON.stringify(params));
+    const blob = new Blob([JSON.stringify({ name, params }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'msg-jumbotron-settings.json';
+    a.download = `${name.replace(/[^a-z0-9]/gi, '_')}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
 });
-pane.addButton({ title: 'Load Settings File' }).on('click', () => {
+pane.addButton({ title: 'Load Concept' }).on('click', () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,.txt';
@@ -571,11 +592,13 @@ pane.addButton({ title: 'Load Settings File' }).on('click', () => {
         const reader = new FileReader();
         reader.onload = () => {
             try {
-                const loaded = JSON.parse(reader.result);
+                const data = JSON.parse(reader.result);
+                const loaded = data.params || data;
                 Object.assign(params, loaded);
-                localStorage.setItem('msg-jumbotron-settings', JSON.stringify(params));
+                localStorage.setItem('msg-jumbotron-concept', JSON.stringify(params));
+                setPresetName(data.name || file.name.replace(/\.\w+$/, ''));
                 pane.refresh();
-            } catch (e) { console.error('Invalid settings file:', e); }
+            } catch (e) { console.error('Invalid concept file:', e); }
         };
         reader.readAsText(file);
     };
