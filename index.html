@@ -119,7 +119,7 @@ const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerH
 camera.position.set(-3.80, 3.48, -11.09);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(-1.23, 3.42, 0.52);
+controls.target.set(-1.23, 3.62, 0.52);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 5;
@@ -264,14 +264,16 @@ gltfLoader.load('models/MSG_Basketball_converted.glb', (gltf) => {
     allScreenMaterials = [...screenMaterialsMain, ...screenMaterialsSecondary];
     console.log('Screens — main:', screenMaterialsMain.length, 'secondary:', screenMaterialsSecondary.length);
 
-    // Load default screen image (concept 1)
+    // Preload all screen textures
     const texLoader = new THREE.TextureLoader();
-    texLoader.load('models/storm-version-1.jpeg', (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.flipY = false;
-        defaultScreenTexture = tex;
-        presetTexCache['models/storm-version-1.jpeg'] = tex;
-        setScreenTexture(tex);
+    const screenImages = ['models/storm-version-1.jpeg', 'models/storm-version4.png', 'models/storm-version5.png'];
+    screenImages.forEach((src, i) => {
+        texLoader.load(src, (tex) => {
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.flipY = false;
+            presetTexCache[src] = tex;
+            if (i === 0) { defaultScreenTexture = tex; setScreenTexture(tex); }
+        });
     });
 });
 
@@ -478,7 +480,7 @@ onResize();
 
 // ── Tweakpane ───────────────────────────────────────────────────────
 const params = {
-    ambientIntensity: 3, ambientColor: '#262626',
+    ambientIntensity: 3, ambientColor: '#333333',
     spotIntensity: 0, spotColor: '#ffffff',
     bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
     exposure: 0.55,
@@ -505,7 +507,7 @@ const params = {
     camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
     camRotX: 146.46, camRotY: 78.24, camRotZ: -147.02,
     camZoom: 45,
-    targetX: -1.23, targetY: 3.42, targetZ: 0.52,
+    targetX: -1.23, targetY: 3.62, targetZ: 0.52,
 };
 
 // Load saved settings
@@ -542,7 +544,7 @@ window.addEventListener('keydown', (e) => {
 // Presets
 const presets = {
     lit: {
-        ambientIntensity: 3, ambientColor: '#262626',
+        ambientIntensity: 3, ambientColor: '#333333',
         spotIntensity: 0, spotColor: '#ffffff',
         bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
         exposure: 0.55,
@@ -562,11 +564,11 @@ const presets = {
         l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
         l2_rotation: 0, l2_beamRotation: 0, l2_radius: 14, l2_height: 7.4,
         camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
-        camZoom: 45, targetX: -1.23, targetY: 3.42, targetZ: 0.52,
+        camZoom: 45, targetX: -1.23, targetY: 3.62, targetZ: 0.52,
         screenImage: 'models/storm-version-1.jpeg',
     },
     dark: {
-        ambientIntensity: 3, ambientColor: '#262626',
+        ambientIntensity: 3, ambientColor: '#333333',
         spotIntensity: 0, spotColor: '#ffffff',
         bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
         exposure: 0.55,
@@ -586,11 +588,11 @@ const presets = {
         l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
         l2_rotation: 0, l2_beamRotation: 0, l2_radius: 14, l2_height: 7.4,
         camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
-        camZoom: 45, targetX: -1.23, targetY: 3.42, targetZ: 0.52,
+        camZoom: 45, targetX: -1.23, targetY: 3.62, targetZ: 0.52,
         screenImage: 'models/storm-version4.png',
     },
     storm: {
-        ambientIntensity: 3, ambientColor: '#262626',
+        ambientIntensity: 3, ambientColor: '#333333',
         spotIntensity: 0, spotColor: '#ffffff',
         bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
         exposure: 0.55,
@@ -610,7 +612,7 @@ const presets = {
         l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
         l2_rotation: -23, l2_beamRotation: 4, l2_radius: 18, l2_height: 2.3,
         camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
-        camZoom: 45, targetX: -1.23, targetY: 3.42, targetZ: 0.52,
+        camZoom: 45, targetX: -1.23, targetY: 3.62, targetZ: 0.52,
         screenImage: 'models/storm-version5.png',
     },
 };
