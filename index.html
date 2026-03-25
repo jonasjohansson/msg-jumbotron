@@ -86,7 +86,7 @@
     </script>
 </head>
 <body>
-<div id="preset-btns"><button data-preset="lit" class="active">1</button><button data-preset="dark">2</button></div>
+<div id="preset-btns"><button data-preset="lit" class="active">1</button><button data-preset="dark">2</button><button data-preset="storm">3</button></div>
 <div id="concept-label">
     <div class="subtitle">Pre-Game Lighting Show - 2:00 to 2:30</div>
     <div class="subtitle no-caps">Creative concept:</div>
@@ -116,10 +116,10 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x0a0a10, 0.012);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
-camera.position.set(-3.80, 3.28, -11.09);
+camera.position.set(-3.80, 3.48, -11.09);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(-1.23, 2.72, 0.52);
+controls.target.set(-1.23, 3.42, 0.52);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 5;
@@ -199,15 +199,15 @@ blurCanvasTex.flipY = false;
 function setScreenTexture(texture) {
     // Main screens — sharp
     screenMaterialsMain.forEach(mat => {
+        mat.emissiveMap = texture;
         mat.map = texture;
-        mat.color.set(0xffffff);
         mat.needsUpdate = true;
     });
     // Secondary screens — blurred version
     blurredTexture = texture;
     screenMaterialsSecondary.forEach(mat => {
+        mat.emissiveMap = blurCanvasTex;
         mat.map = blurCanvasTex;
-        mat.color.set(0xffffff);
         mat.needsUpdate = true;
     });
 }
@@ -231,21 +231,21 @@ gltfLoader.load('models/MSG_Basketball_converted.glb', (gltf) => {
 
         // CenterScreens — the unified UV-mapped screen material (sharp)
         if (matName === 'CenterScreens') {
-            const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            const sMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 1.5 });
             child.material = sMat;
             screenMaterialsMain.push(sMat);
         }
 
         // Banners — blurred version (skip Black and structural materials)
         if (/^Banners/i.test(name) && matName !== 'Black' && matName !== 'Navy Blue' && !/^Banner \d/i.test(matName) && !/^Logo/i.test(matName)) {
-            const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            const sMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 1.5 });
             child.material = sMat;
             screenMaterialsSecondary.push(sMat);
         }
 
         // TV Screens — blurred version (skip Black and Chrome frames)
         if (/^Tv_Screens|^TV_Screens/i.test(name) && matName !== 'Black' && matName !== 'Metal 1 (Chrome)') {
-            const sMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            const sMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 1.5 });
             child.material = sMat;
             screenMaterialsSecondary.push(sMat);
         }
@@ -264,23 +264,15 @@ gltfLoader.load('models/MSG_Basketball_converted.glb', (gltf) => {
     allScreenMaterials = [...screenMaterialsMain, ...screenMaterialsSecondary];
     console.log('Screens — main:', screenMaterialsMain.length, 'secondary:', screenMaterialsSecondary.length);
 
-    // Load default test video
-    const defaultVideo = document.createElement('video');
-    defaultVideo.src = 'models/screenUV_Layout_Test01.mp4';
-    defaultVideo.loop = true;
-    defaultVideo.muted = true;
-    defaultVideo.playsInline = true;
-    defaultVideo.play().catch(() => {
-        document.addEventListener('click', () => defaultVideo.play(), { once: true });
+    // Load default screen image (concept 1)
+    const texLoader = new THREE.TextureLoader();
+    texLoader.load('models/storm-version-1.jpeg', (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false;
+        defaultScreenTexture = tex;
+        presetTexCache['models/storm-version-1.jpeg'] = tex;
+        setScreenTexture(tex);
     });
-    const defaultVidTex = new THREE.VideoTexture(defaultVideo);
-    defaultVidTex.minFilter = THREE.LinearFilter;
-    defaultVidTex.magFilter = THREE.LinearFilter;
-    defaultVidTex.colorSpace = THREE.SRGBColorSpace;
-    defaultVidTex.flipY = false;
-    defaultScreenTexture = defaultVidTex;
-    setScreenTexture(defaultVidTex);
-    videoMode = true;
 });
 
 // ── Arena Lighting ──────────────────────────────────────────────────
@@ -486,7 +478,7 @@ onResize();
 
 // ── Tweakpane ───────────────────────────────────────────────────────
 const params = {
-    ambientIntensity: 3, ambientColor: '#1f1f1f',
+    ambientIntensity: 3, ambientColor: '#262626',
     spotIntensity: 0, spotColor: '#ffffff',
     bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
     exposure: 0.55,
@@ -494,10 +486,11 @@ const params = {
     grain: 0.03, chromatic: 0,
     saturation: 1, contrast: 1, brightness: 0,
     lightFixtureIntensity: 2, lightFixtureColor: '#efefef',
+    screenEmissive: 1.5,
     // Laser Group 1
-    l1_enabled: true, l1_count: 4, l1_color: '#ff6600',
+    l1_enabled: false, l1_count: 4, l1_color: '#ff6600',
     l1_intensity: 5, l1_opacity: 0.6, l1_width: 0.05, l1_timer: 10,
-    l1_baseX: 0.5, l1_baseY: -1, l1_targetX: 0, l1_targetY: 0,
+    l1_baseX: -0.3, l1_baseY: -1.4, l1_targetX: 0, l1_targetY: 0,
     l1_length: 1, l1_pulseOn: 1, l1_pulseOff: 0,
     l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1,
     l1_rotation: 0, l1_beamRotation: 0, l1_radius: 14, l1_height: 3.2,
@@ -509,10 +502,10 @@ const params = {
     l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
     l2_rotation: 0, l2_beamRotation: 0, l2_radius: 14, l2_height: 7.4,
     // Camera
-    camPosX: -3.80, camPosY: 3.28, camPosZ: -11.09,
+    camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
     camRotX: 146.46, camRotY: 78.24, camRotZ: -147.02,
     camZoom: 45,
-    targetX: -1.23, targetY: 2.72, targetZ: 0.52,
+    targetX: -1.23, targetY: 3.42, targetZ: 0.52,
 };
 
 // Load saved settings
@@ -549,7 +542,7 @@ window.addEventListener('keydown', (e) => {
 // Presets
 const presets = {
     lit: {
-        ambientIntensity: 3, ambientColor: '#1f1f1f',
+        ambientIntensity: 3, ambientColor: '#262626',
         spotIntensity: 0, spotColor: '#ffffff',
         bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
         exposure: 0.55,
@@ -557,8 +550,9 @@ const presets = {
         grain: 0.03, chromatic: 0,
         saturation: 1, contrast: 1, brightness: 0,
         lightFixtureIntensity: 2, lightFixtureColor: '#efefef',
-        l1_enabled: true, l1_count: 4, l1_color: '#ff6600', l1_intensity: 5, l1_opacity: 0.6,
-        l1_width: 0.05, l1_timer: 10, l1_baseX: 0.5, l1_baseY: -1, l1_targetX: 0, l1_targetY: 0,
+        screenEmissive: 1.5,
+        l1_enabled: false, l1_count: 4, l1_color: '#ff6600', l1_intensity: 5, l1_opacity: 0.6,
+        l1_width: 0.05, l1_timer: 10, l1_baseX: -0.3, l1_baseY: -1.4, l1_targetX: 0, l1_targetY: 0,
         l1_length: 1, l1_pulseOn: 1, l1_pulseOff: 0,
         l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1,
         l1_rotation: 0, l1_beamRotation: 0, l1_radius: 14, l1_height: 3.2,
@@ -567,32 +561,70 @@ const presets = {
         l2_length: 1, l2_pulseOn: 1, l2_pulseOff: 0,
         l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
         l2_rotation: 0, l2_beamRotation: 0, l2_radius: 14, l2_height: 7.4,
-        camPosX: -3.80, camPosY: 3.28, camPosZ: -11.09,
-        camZoom: 45, targetX: -1.23, targetY: 2.72, targetZ: 0.52,
+        camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
+        camZoom: 45, targetX: -1.23, targetY: 3.42, targetZ: 0.52,
+        screenImage: 'models/storm-version-1.jpeg',
     },
     dark: {
-        ambientIntensity: 0.85, ambientColor: '#ffffff',
+        ambientIntensity: 3, ambientColor: '#262626',
         spotIntensity: 0, spotColor: '#ffffff',
-        bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#000000',
-        exposure: 1.0,
-        bloom: 0.20, bloomRadius: 0.60, bloomThreshold: 0.15,
-        grain: 0.02, chromatic: 0,
-        saturation: 1.35, contrast: 1.50, brightness: 0,
+        bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
+        exposure: 0.55,
+        bloom: 0.5, bloomRadius: 0.7, bloomThreshold: 0.8,
+        grain: 0.03, chromatic: 0,
+        saturation: 1, contrast: 1, brightness: 0,
         lightFixtureIntensity: 2, lightFixtureColor: '#efefef',
-        l1_enabled: true, l1_count: 25, l1_color: '#ff6600', l1_intensity: 2.0, l1_opacity: 0.6,
-        l1_width: 0.05, l1_timer: 10.0, l1_baseX: -0.3, l1_baseY: -1.4, l1_targetX: 0.0, l1_targetY: 0.0,
-        l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
-        l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1.0,
-        l1_rotation: 0.0, l1_beamRotation: 0.0, l1_radius: 14.0, l1_height: 3.2,
-        l2_enabled: true, l2_count: 4, l2_color: '#0066ff', l2_intensity: 2.0, l2_opacity: 0.6,
-        l2_width: 0.03, l2_timer: 10.0, l2_baseX: 0.0, l2_baseY: -7.1, l2_targetX: 0.0, l2_targetY: 0.0,
-        l2_length: 1.0, l2_pulseOn: 1.0, l2_pulseOff: 0.0,
-        l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1.0,
-        l2_rotation: 0.0, l2_beamRotation: 0.0, l2_radius: 14.0, l2_height: 7.4,
-        camPosX: -3.80, camPosY: 3.28, camPosZ: -11.09,
-        camZoom: 45, targetX: -1.23, targetY: 2.72, targetZ: 0.52,
+        screenEmissive: 1.5,
+        l1_enabled: true, l1_count: 4, l1_color: '#ff6600', l1_intensity: 5, l1_opacity: 0.6,
+        l1_width: 0.05, l1_timer: 10, l1_baseX: -0.3, l1_baseY: -1.4, l1_targetX: 0, l1_targetY: 0,
+        l1_length: 1, l1_pulseOn: 1, l1_pulseOff: 0,
+        l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1,
+        l1_rotation: 0, l1_beamRotation: 0, l1_radius: 14, l1_height: 3.2,
+        l2_enabled: false, l2_count: 4, l2_color: '#0066ff', l2_intensity: 3, l2_opacity: 0.6,
+        l2_width: 0.15, l2_timer: 10, l2_baseX: 0, l2_baseY: 0, l2_targetX: 0, l2_targetY: 0,
+        l2_length: 1, l2_pulseOn: 1, l2_pulseOff: 0,
+        l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
+        l2_rotation: 0, l2_beamRotation: 0, l2_radius: 14, l2_height: 7.4,
+        camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
+        camZoom: 45, targetX: -1.23, targetY: 3.42, targetZ: 0.52,
+        screenImage: 'models/storm-version4.png',
+    },
+    storm: {
+        ambientIntensity: 3, ambientColor: '#262626',
+        spotIntensity: 0, spotColor: '#ffffff',
+        bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
+        exposure: 0.55,
+        bloom: 0.5, bloomRadius: 0.7, bloomThreshold: 0.8,
+        grain: 0.03, chromatic: 0,
+        saturation: 1, contrast: 1, brightness: 0,
+        lightFixtureIntensity: 2, lightFixtureColor: '#efefef',
+        screenEmissive: 1.5,
+        l1_enabled: true, l1_count: 4, l1_color: '#ff6600', l1_intensity: 5, l1_opacity: 0.6,
+        l1_width: 0.05, l1_timer: 10, l1_baseX: 0.5, l1_baseY: -1.7, l1_targetX: 0, l1_targetY: 0,
+        l1_length: 1, l1_pulseOn: 1, l1_pulseOff: 0,
+        l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1,
+        l1_rotation: 0, l1_beamRotation: 0, l1_radius: 14, l1_height: 3.2,
+        l2_enabled: true, l2_count: 4, l2_color: '#0066ff', l2_intensity: 5, l2_opacity: 0.6,
+        l2_width: 0.05, l2_timer: 10, l2_baseX: 1.7, l2_baseY: -1.1, l2_targetX: 0, l2_targetY: 0,
+        l2_length: 1, l2_pulseOn: 1, l2_pulseOff: 0,
+        l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
+        l2_rotation: -23, l2_beamRotation: 4, l2_radius: 18, l2_height: 2.3,
+        camPosX: -3.80, camPosY: 3.48, camPosZ: -11.09,
+        camZoom: 45, targetX: -1.23, targetY: 3.42, targetZ: 0.52,
+        screenImage: 'models/storm-version5.png',
     },
 };
+
+const presetTexCache = {};
+function loadPresetTexture(src, cb) {
+    if (presetTexCache[src]) { cb(presetTexCache[src]); return; }
+    new THREE.TextureLoader().load(src, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false;
+        presetTexCache[src] = tex;
+        cb(tex);
+    });
+}
 
 function applyPreset(name) {
     const p = presets[name];
@@ -602,14 +634,18 @@ function applyPreset(name) {
     document.querySelectorAll('#preset-btns button').forEach(b => {
         b.classList.toggle('active', b.dataset.preset === name);
     });
+    if (p.screenImage) {
+        loadPresetTexture(p.screenImage, (tex) => setScreenTexture(tex));
+    }
 }
 
 document.querySelectorAll('#preset-btns button').forEach(b => {
     b.addEventListener('click', () => applyPreset(b.dataset.preset));
 });
 
-pane.addButton({ title: 'Lit Environment' }).on('click', () => applyPreset('lit'));
-pane.addButton({ title: 'Dark Environment' }).on('click', () => applyPreset('dark'));
+pane.addButton({ title: 'Concept 1' }).on('click', () => applyPreset('lit'));
+pane.addButton({ title: 'Concept 2' }).on('click', () => applyPreset('dark'));
+pane.addButton({ title: 'Concept 3' }).on('click', () => applyPreset('storm'));
 
 // Ensure concept 1 is the starting state regardless of localStorage
 applyPreset('lit');
@@ -750,9 +786,33 @@ pane.addButton({ title: 'Load Concept' }).on('click', () => {
 });
 
 // ── Source Controls ─────────────────────────────────────────────────
-const sourceFolder = pane.addFolder({ title: 'Screen Source' });
-sourceFolder.addButton({ title: 'Default Test Video' }).on('click', () => {
-    if (defaultScreenTexture) { setScreenTexture(defaultScreenTexture); videoMode = true; }
+const sourceFolder = pane.addFolder({ title: 'Screen Source', expanded: false });
+sourceFolder.addBinding(params, 'screenEmissive', { min: 0, max: 5, step: 0.1, label: 'Emissive' });
+sourceFolder.addButton({ title: 'Load Image' }).on('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                const tex = new THREE.Texture(img);
+                tex.colorSpace = THREE.SRGBColorSpace;
+                tex.flipY = false;
+                tex.needsUpdate = true;
+                setScreenTexture(tex);
+            };
+            img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    };
+    input.click();
+});
+sourceFolder.addButton({ title: 'Default Image' }).on('click', () => {
+    if (defaultScreenTexture) setScreenTexture(defaultScreenTexture);
 });
 
 
@@ -791,6 +851,9 @@ function animate() {
     scene.fog.density = params.fogDensity;
     scene.fog.color.set(params.fogColor);
     renderer.toneMappingExposure = params.exposure;
+
+    // Screen emissive
+    allScreenMaterials.forEach(mat => { mat.emissiveIntensity = params.screenEmissive; });
 
     // Post FX
     bloomPass.strength = params.bloom;
@@ -967,6 +1030,11 @@ const darkBtn = document.createElement('button');
 darkBtn.textContent = '🌙';
 darkBtn.addEventListener('click', () => applyPreset('dark'));
 camBar.appendChild(darkBtn);
+
+const stormBtn = document.createElement('button');
+stormBtn.textContent = '⚡';
+stormBtn.addEventListener('click', () => applyPreset('storm'));
+camBar.appendChild(stormBtn);
 
 // Camera buttons
 const camLabels = ['Free', '1', '2', '3', '4', '5', '6'];
