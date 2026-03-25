@@ -250,8 +250,14 @@ gltfLoader.load('models/MSG_Basketball_converted.glb', (gltf) => {
             screenMaterialsSecondary.push(sMat);
         }
 
-        // Halogen Lights & Speakers — emissive shader
-        if (/^Halogen_Lights|^Speakers/i.test(child.name || '')) {
+        // Halogen Lights — emissive shader (only Material #56 and #52)
+        if (/^Halogen/i.test(child.name || '')) {
+            if (/^Material #(56|52)$/i.test(matName)) {
+                child.material = lightFixtureMat;
+            }
+        }
+        // Lights Roof — emissive shader
+        if (child.name === 'Lights_Roof_2') {
             child.material = lightFixtureMat;
         }
     });
@@ -487,9 +493,9 @@ const params = {
     bloom: 0.5, bloomRadius: 0.7, bloomThreshold: 0.8,
     grain: 0.03, chromatic: 0,
     saturation: 1, contrast: 1, brightness: 0,
-    lightFixtureIntensity: 2.0, lightFixtureColor: '#9c9dff',
+    lightFixtureIntensity: 2, lightFixtureColor: '#efefef',
     // Laser Group 1
-    l1_enabled: true, l1_count: 5, l1_color: '#ff6600',
+    l1_enabled: true, l1_count: 4, l1_color: '#ff6600',
     l1_intensity: 5, l1_opacity: 0.6, l1_width: 0.05, l1_timer: 10,
     l1_baseX: 0.5, l1_baseY: -1, l1_targetX: 0, l1_targetY: 0,
     l1_length: 1, l1_pulseOn: 1, l1_pulseOff: 0,
@@ -550,8 +556,8 @@ const presets = {
         bloom: 0.5, bloomRadius: 0.7, bloomThreshold: 0.8,
         grain: 0.03, chromatic: 0,
         saturation: 1, contrast: 1, brightness: 0,
-        lightFixtureIntensity: 2.0, lightFixtureColor: '#9c9dff',
-        l1_enabled: true, l1_count: 5, l1_color: '#ff6600', l1_intensity: 5, l1_opacity: 0.6,
+        lightFixtureIntensity: 2, lightFixtureColor: '#efefef',
+        l1_enabled: true, l1_count: 4, l1_color: '#ff6600', l1_intensity: 5, l1_opacity: 0.6,
         l1_width: 0.05, l1_timer: 10, l1_baseX: 0.5, l1_baseY: -1, l1_targetX: 0, l1_targetY: 0,
         l1_length: 1, l1_pulseOn: 1, l1_pulseOff: 0,
         l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1,
@@ -572,7 +578,7 @@ const presets = {
         bloom: 0.20, bloomRadius: 0.60, bloomThreshold: 0.15,
         grain: 0.02, chromatic: 0,
         saturation: 1.35, contrast: 1.50, brightness: 0,
-        lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
+        lightFixtureIntensity: 2, lightFixtureColor: '#efefef',
         l1_enabled: true, l1_count: 25, l1_color: '#ff6600', l1_intensity: 2.0, l1_opacity: 0.6,
         l1_width: 0.05, l1_timer: 10.0, l1_baseX: -0.3, l1_baseY: -1.4, l1_targetX: 0.0, l1_targetY: 0.0,
         l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
