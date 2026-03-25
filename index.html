@@ -41,6 +41,28 @@
             font: 13px -apple-system, sans-serif;
             pointer-events: none;
         }
+        #preset-btns {
+            position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100;
+            display: flex; gap: 8px;
+        }
+        #preset-btns button {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: #fff; font: bold 16px -apple-system, sans-serif;
+            cursor: pointer; transition: all 0.2s;
+        }
+        #preset-btns button:hover { background: rgba(255,255,255,0.25); }
+        #preset-btns button.active {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.7);
+        }
+        #concept-img {
+            position: fixed; bottom: 12px; left: 12px; z-index: 90;
+            max-width: 280px; border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.6);
+            pointer-events: none;
+        }
     </style>
     <script type="importmap">
     {
@@ -52,6 +74,8 @@
     </script>
 </head>
 <body>
+<div id="preset-btns"><button data-preset="lit" class="active">1</button><button data-preset="dark">2</button></div>
+<img id="concept-img" src="storm-concept.png" alt="Creative concept: The Storm">
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -76,7 +100,7 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x0a0a10, 0.012);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-camera.position.set(0, 3, 12);
+camera.position.set(15.21, 5.25, -2.64);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 7, 0);
@@ -409,27 +433,32 @@ onResize();
 // ── Tweakpane ───────────────────────────────────────────────────────
 const params = {
     ambientIntensity: 0.85, ambientColor: '#ffffff',
-    spotIntensity: 0.0, spotColor: '#ffffff',
+    spotIntensity: 0, spotColor: '#ffffff',
     bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#000000',
     exposure: 1.0,
     bloom: 0.20, bloomRadius: 0.60, bloomThreshold: 0.15,
-    grain: 0.060, chromatic: 0,
+    grain: 0.02, chromatic: 0,
     saturation: 1.35, contrast: 1.50, brightness: 0,
     lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
     // Laser Group 1
     l1_enabled: true, l1_count: 25, l1_color: '#ff6600',
-    l1_intensity: 2.0, l1_opacity: 0.6, l1_width: 0.15, l1_timer: 10.0,
-    l1_baseX: 0.0, l1_baseY: 0.0, l1_targetX: 0.0, l1_targetY: 0.0,
+    l1_intensity: 2.0, l1_opacity: 0.6, l1_width: 0.05, l1_timer: 10.0,
+    l1_baseX: -0.3, l1_baseY: -1.4, l1_targetX: 0.0, l1_targetY: 0.0,
     l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
     l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1.0,
     l1_rotation: 0.0, l1_beamRotation: 0.0, l1_radius: 14.0, l1_height: 3.2,
     // Laser Group 2
-    l2_enabled: false, l2_count: 4, l2_color: '#0066ff',
-    l2_intensity: 2.0, l2_opacity: 0.6, l2_width: 0.15, l2_timer: 10.0,
-    l2_baseX: 0.0, l2_baseY: 0.0, l2_targetX: 0.0, l2_targetY: 0.0,
+    l2_enabled: true, l2_count: 4, l2_color: '#0066ff',
+    l2_intensity: 2.0, l2_opacity: 0.6, l2_width: 0.03, l2_timer: 10.0,
+    l2_baseX: 0.0, l2_baseY: -7.1, l2_targetX: 0.0, l2_targetY: 0.0,
     l2_length: 1.0, l2_pulseOn: 1.0, l2_pulseOff: 0.0,
     l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1.0,
     l2_rotation: 0.0, l2_beamRotation: 0.0, l2_radius: 14.0, l2_height: 7.4,
+    // Camera
+    camPosX: 15.21, camPosY: 5.25, camPosZ: -2.64,
+    camRotX: 146.46, camRotY: 78.24, camRotZ: -147.02,
+    camZoom: 60,
+    targetX: 0, targetY: 7, targetZ: 0,
 };
 
 // Load saved settings
@@ -438,63 +467,96 @@ try {
     if (saved) {
         const parsed = JSON.parse(saved);
         Object.assign(params, parsed);
+        applyCameraFromParams();
     }
 } catch (e) { console.warn('Could not load concept:', e); }
 
+function applyCameraFromParams() {
+    if (params.camPosX != null) camera.position.set(params.camPosX, params.camPosY, params.camPosZ);
+    if (params.camZoom != null) { camera.fov = params.camZoom; camera.updateProjectionMatrix(); }
+    if (params.targetX != null) controls.target.set(params.targetX, params.targetY, params.targetZ);
+    controls.update();
+}
+
 const pane = new Pane({ title: 'MSG Jumbotron', expanded: false });
+pane.element.style.display = 'none';
+window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'g') {
+        e.preventDefault();
+        const el = pane.element;
+        el.style.display = el.style.display === 'none' ? '' : 'none';
+    }
+});
 
 // Presets
 const presets = {
     lit: {
         ambientIntensity: 0.85, ambientColor: '#ffffff',
-        spotIntensity: 0.0, spotColor: '#ffffff',
+        spotIntensity: 0, spotColor: '#ffffff',
         bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#000000',
         exposure: 1.0,
         bloom: 0.20, bloomRadius: 0.60, bloomThreshold: 0.15,
-        grain: 0.020, chromatic: 0,
+        grain: 0.02, chromatic: 0,
         saturation: 1.35, contrast: 1.50, brightness: 0,
         lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
-        l1_enabled: false, l1_count: 25, l1_color: '#ff6600', l1_intensity: 2.0, l1_opacity: 0.6,
-        l1_width: 0.15, l1_timer: 10.0, l1_baseX: 0.0, l1_baseY: 0.0, l1_targetX: 0.0, l1_targetY: 0.0,
+        l1_enabled: true, l1_count: 25, l1_color: '#ff6600', l1_intensity: 2.0, l1_opacity: 0.6,
+        l1_width: 0.05, l1_timer: 10.0, l1_baseX: -0.3, l1_baseY: -1.4, l1_targetX: 0.0, l1_targetY: 0.0,
         l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
         l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1.0,
         l1_rotation: 0.0, l1_beamRotation: 0.0, l1_radius: 14.0, l1_height: 3.2,
-        l2_enabled: false, l2_count: 4, l2_color: '#0066ff', l2_intensity: 2.0, l2_opacity: 0.6,
-        l2_width: 0.15, l2_timer: 10.0, l2_baseX: 0.0, l2_baseY: 0.0, l2_targetX: 0.0, l2_targetY: 0.0,
+        l2_enabled: true, l2_count: 4, l2_color: '#0066ff', l2_intensity: 2.0, l2_opacity: 0.6,
+        l2_width: 0.03, l2_timer: 10.0, l2_baseX: 0.0, l2_baseY: -7.1, l2_targetX: 0.0, l2_targetY: 0.0,
         l2_length: 1.0, l2_pulseOn: 1.0, l2_pulseOff: 0.0,
         l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1.0,
         l2_rotation: 0.0, l2_beamRotation: 0.0, l2_radius: 14.0, l2_height: 7.4,
+        camPosX: 15.21, camPosY: 5.25, camPosZ: -2.64,
+        camRotX: 146.46, camRotY: 78.24, camRotZ: -147.02,
+        camZoom: 60, targetX: 0, targetY: 7, targetZ: 0,
     },
     dark: {
-        ambientIntensity: 3.0, ambientColor: '#000000',
-        spotIntensity: 0.0, spotColor: '#ffffff',
-        bgColor: '#ffffff', fogDensity: 0.042, fogColor: '#0a0a10',
+        ambientIntensity: 3, ambientColor: '#000000',
+        spotIntensity: 0, spotColor: '#ffffff',
+        bgColor: '#ffffff', fogDensity: 0.009, fogColor: '#0a0a10',
         exposure: 0.55,
-        bloom: 0.40, bloomRadius: 0.70, bloomThreshold: 0.80,
-        grain: 0.045, chromatic: 0,
-        saturation: 1.0, contrast: 1.0, brightness: 0,
-        lightFixtureIntensity: 5.0, lightFixtureColor: '#9c9dff',
-        l1_enabled: true, l1_count: 25, l1_color: '#ff6600', l1_intensity: 3.0, l1_opacity: 0.6,
-        l1_width: 0.15, l1_timer: 10.0, l1_baseX: 0.0, l1_baseY: 0.0, l1_targetX: 0.0, l1_targetY: 0.0,
-        l1_length: 1.0, l1_pulseOn: 1.0, l1_pulseOff: 0.0,
-        l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1.0,
-        l1_rotation: 0.0, l1_beamRotation: 0.0, l1_radius: 14.0, l1_height: 3.2,
-        l2_enabled: true, l2_count: 4, l2_color: '#0066ff', l2_intensity: 3.0, l2_opacity: 0.6,
-        l2_width: 0.15, l2_timer: 10.0, l2_baseX: 0.0, l2_baseY: 0.0, l2_targetX: 0.0, l2_targetY: 0.0,
-        l2_length: 1.0, l2_pulseOn: 1.0, l2_pulseOff: 0.0,
-        l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1.0,
-        l2_rotation: 0.0, l2_beamRotation: 0.0, l2_radius: 14.0, l2_height: 7.4,
+        bloom: 0.5, bloomRadius: 0.7, bloomThreshold: 0.8,
+        grain: 0.03, chromatic: 0,
+        saturation: 1, contrast: 1, brightness: 0,
+        lightFixtureIntensity: 2.0, lightFixtureColor: '#9c9dff',
+        l1_enabled: true, l1_count: 5, l1_color: '#ff6600', l1_intensity: 5, l1_opacity: 0.6,
+        l1_width: 0.05, l1_timer: 10, l1_baseX: 0.5, l1_baseY: -1, l1_targetX: 0, l1_targetY: 0,
+        l1_length: 1, l1_pulseOn: 1, l1_pulseOff: 0,
+        l1_extra: 0, l1_extra1Offset: 0.5, l1_extra2Offset: 1,
+        l1_rotation: 0, l1_beamRotation: 0, l1_radius: 14, l1_height: 3.2,
+        l2_enabled: false, l2_count: 4, l2_color: '#0066ff', l2_intensity: 3, l2_opacity: 0.6,
+        l2_width: 0.15, l2_timer: 10, l2_baseX: 0, l2_baseY: 0, l2_targetX: 0, l2_targetY: 0,
+        l2_length: 1, l2_pulseOn: 1, l2_pulseOff: 0,
+        l2_extra: 0, l2_extra1Offset: 0.5, l2_extra2Offset: 1,
+        l2_rotation: 0, l2_beamRotation: 0, l2_radius: 14, l2_height: 7.4,
+        camPosX: 15.21, camPosY: 5.25, camPosZ: -2.64,
+        camRotX: 146.46, camRotY: 78.24, camRotZ: -147.02,
+        camZoom: 60, targetX: 0, targetY: 7, targetZ: 0,
     },
 };
 
 function applyPreset(name) {
     const p = presets[name];
     Object.assign(params, p);
+    applyCameraFromParams();
     pane.refresh();
+    document.querySelectorAll('#preset-btns button').forEach(b => {
+        b.classList.toggle('active', b.dataset.preset === name);
+    });
 }
+
+document.querySelectorAll('#preset-btns button').forEach(b => {
+    b.addEventListener('click', () => applyPreset(b.dataset.preset));
+});
 
 pane.addButton({ title: 'Lit Environment' }).on('click', () => applyPreset('lit'));
 pane.addButton({ title: 'Dark Environment' }).on('click', () => applyPreset('dark'));
+
+// Ensure concept 1 is the starting state regardless of localStorage
+applyPreset('lit');
 
 const bloomFolder = pane.addFolder({ title: 'Bloom', expanded: false });
 bloomFolder.addBinding(params, 'bloom', { min: 0, max: 3, step: 0.05, label: 'Strength' });
@@ -520,6 +582,18 @@ lightingFolder.addBinding(params, 'spotColor', { label: 'Spot Color' });
 const fixtureFolder = pane.addFolder({ title: 'Light Fixtures', expanded: false });
 fixtureFolder.addBinding(params, 'lightFixtureIntensity', { min: 0, max: 5, step: 0.1, label: 'Intensity' });
 fixtureFolder.addBinding(params, 'lightFixtureColor', { label: 'Color' });
+
+const camFolder = pane.addFolder({ title: 'Camera', expanded: false });
+camFolder.addBinding(params, 'camPosX', { min: -100, max: 100, step: 0.1, label: 'Pos X', readonly: true });
+camFolder.addBinding(params, 'camPosY', { min: -100, max: 100, step: 0.1, label: 'Pos Y', readonly: true });
+camFolder.addBinding(params, 'camPosZ', { min: -100, max: 100, step: 0.1, label: 'Pos Z', readonly: true });
+camFolder.addBinding(params, 'camRotX', { min: -180, max: 180, step: 0.1, label: 'Rot X', readonly: true });
+camFolder.addBinding(params, 'camRotY', { min: -180, max: 180, step: 0.1, label: 'Rot Y', readonly: true });
+camFolder.addBinding(params, 'camRotZ', { min: -180, max: 180, step: 0.1, label: 'Rot Z', readonly: true });
+camFolder.addBinding(params, 'camZoom', { min: 1, max: 120, step: 1, label: 'FOV', readonly: true });
+camFolder.addBinding(params, 'targetX', { min: -100, max: 100, step: 0.1, label: 'Target X', readonly: true });
+camFolder.addBinding(params, 'targetY', { min: -100, max: 100, step: 0.1, label: 'Target Y', readonly: true });
+camFolder.addBinding(params, 'targetZ', { min: -100, max: 100, step: 0.1, label: 'Target Z', readonly: true });
 
 const envFolder = pane.addFolder({ title: 'Environment', expanded: false });
 envFolder.addBinding(params, 'bgColor', { label: 'Background' });
@@ -595,6 +669,7 @@ pane.addButton({ title: 'Load Concept' }).on('click', () => {
                 const data = JSON.parse(reader.result);
                 const loaded = data.params || data;
                 Object.assign(params, loaded);
+                applyCameraFromParams();
                 localStorage.setItem('msg-jumbotron-concept', JSON.stringify(params));
                 setPresetName(data.name || file.name.replace(/\.\w+$/, ''));
                 pane.refresh();
@@ -620,6 +695,19 @@ function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     elapsed += dt;
+
+    // Sync camera → params
+    params.camPosX = +camera.position.x.toFixed(2);
+    params.camPosY = +camera.position.y.toFixed(2);
+    params.camPosZ = +camera.position.z.toFixed(2);
+    params.camRotX = +(THREE.MathUtils.radToDeg(camera.rotation.x)).toFixed(2);
+    params.camRotY = +(THREE.MathUtils.radToDeg(camera.rotation.y)).toFixed(2);
+    params.camRotZ = +(THREE.MathUtils.radToDeg(camera.rotation.z)).toFixed(2);
+    params.camZoom = +camera.fov.toFixed(0);
+    params.targetX = +controls.target.x.toFixed(2);
+    params.targetY = +controls.target.y.toFixed(2);
+    params.targetZ = +controls.target.z.toFixed(2);
+    camFolder.refresh();
 
     // Scene
     ambientLight.intensity = params.ambientIntensity;
