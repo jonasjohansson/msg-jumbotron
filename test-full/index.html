@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Full Arena + Screen UV Test</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; }
+        canvas { display: block; }
+        #info { position: fixed; top: 10px; left: 10px; color: #fff; font: 14px monospace;
+                background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px; z-index: 10; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<div id="info">Drop video/image to change screens</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+// Renderer
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// Scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a10);
+
+// Camera
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 5, 50);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 8, 0);
+controls.enableDamping = true;
+controls.update();
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+const spot1 = new THREE.SpotLight(0xffffff, 2.0, 120, Math.PI / 3, 0.5);
+spot1.position.set(0, 40, 0);
+scene.add(spot1);
+const spot2 = new THREE.SpotLight(0xffffff, 1.0, 80, Math.PI / 3, 0.6);
+spot2.position.set(20, 30, 20);
+scene.add(spot2);
+const spot3 = new THREE.SpotLight(0xffffff, 1.0, 80, Math.PI / 3, 0.6);
+spot3.position.set(-20, 30, -20);
+scene.add(spot3);
+
+// Screen materials
+const screenMaterials = [];
+
+// Default texture — test image
+const defaultTexture = new THREE.TextureLoader().load('screenUV_Layout_Test01.png');
+defaultTexture.colorSpace = THREE.SRGBColorSpace;
+defaultTexture.flipY = false;
+
+function setScreenTexture(tex) {
+    screenMaterials.forEach(mat => {
+        mat.map = tex;
+        mat.color.set(0xffffff);
+        mat.needsUpdate = true;
+    });
+}
+
+// Check if a mesh's UVs fall within the atlas range (0-1)
+function hasAtlasUVs(mesh) {
+    const uv = mesh.geometry?.attributes?.uv;
+    if (!uv) return false;
+    const arr = uv.array;
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (let i = 0; i < arr.length; i += 2) {
+        if (arr[i] < minU) minU = arr[i];
+        if (arr[i] > maxU) maxU = arr[i];
+        if (arr[i+1] < minV) minV = arr[i+1];
+        if (arr[i+1] > maxV) maxV = arr[i+1];
+    }
+    // Screen UVs sit within 0-1, frame parts have wild ranges like -13 to 46
+    return minU >= -0.1 && maxU <= 1.1 && minV >= -0.1 && maxV <= 1.1;
+}
+
+// Loader
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/');
+const loader = new GLTFLoader();
+loader.setDRACOLoader(dracoLoader);
+
+// Load full arena
+loader.load('arena.glb', (gltf) => {
+    const model = gltf.scene;
+    model.scale.setScalar(0.3);
+
+    // Remove Center Screens from full arena (we'll use the UV-mapped version)
+    const toRemove = [];
+    model.traverse((child) => {
+        if (child.isMesh && /Center_Screens/i.test(child.name || '')) {
+            toRemove.push(child);
+        }
+    });
+    toRemove.forEach(m => { m.removeFromParent(); m.geometry.dispose(); });
+    console.log('Removed', toRemove.length, 'Center_Screens meshes from arena');
+
+    scene.add(model);
+});
+
+// Load UV-mapped screens separately
+loader.load('screens.glb', (gltf) => {
+    const screens = gltf.scene;
+    // screens.glb is unscaled (raw FBX units), match arena scale
+    screens.scale.setScalar(0.3);
+    scene.add(screens);
+
+    screens.traverse((child) => {
+        if (!child.isMesh) return;
+        console.log('Screen:', child.name, 'mat:', child.material?.name);
+        const sMat = new THREE.MeshBasicMaterial({
+            map: defaultTexture,
+            side: THREE.DoubleSide,
+        });
+        child.material = sMat;
+        screenMaterials.push(sMat);
+    });
+
+    console.log('Screen materials:', screenMaterials.length);
+
+    // Auto-play test video
+    const video = document.createElement('video');
+    video.src = 'screenUV_Layout_Test01.mp4';
+    video.loop = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.play().catch(() => {
+        document.addEventListener('click', () => video.play(), { once: true });
+    });
+    const vidTex = new THREE.VideoTexture(video);
+    vidTex.colorSpace = THREE.SRGBColorSpace;
+    vidTex.flipY = false;
+    video.addEventListener('playing', () => setScreenTexture(vidTex), { once: true });
+});
+
+// Drag & drop
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files[0];
+    console.log('Drop:', file?.name, file?.type, 'screens:', screenMaterials.length);
+    if (!file) return;
+
+    if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.play();
+        const tex = new THREE.VideoTexture(video);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false;
+        setScreenTexture(tex);
+    } else if (file.type.startsWith('image/')) {
+        const img = new Image();
+        img.onload = () => {
+            const tex = new THREE.Texture(img);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.flipY = false;
+            tex.needsUpdate = true;
+            setScreenTexture(tex);
+        };
+        img.src = URL.createObjectURL(file);
+    }
+});
+
+// Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Render
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+
+// Fullscreen
+renderer.domElement.addEventListener('dblclick', () => {
+    if (!document.fullscreenElement) renderer.domElement.requestFullscreen();
+    else document.exitFullscreen();
+});
+</script>
+</body>
+</html>

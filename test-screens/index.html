@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Screen UV Test</title>
+    <style>
+        body { margin: 0; background: #111; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222222);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 10, 30);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 10, 0);
+controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff, 2));
+
+// Load test image as default texture
+const testTexture = new THREE.TextureLoader().load('screenUV_Layout_Test01.png');
+testTexture.colorSpace = THREE.SRGBColorSpace;
+testTexture.flipY = false;
+
+const screenMaterials = [];
+
+new GLTFLoader().load('screens.glb', (gltf) => {
+    const model = gltf.scene;
+    scene.add(model);
+
+    model.traverse((child) => {
+        if (!child.isMesh) return;
+        console.log('Mesh:', child.name, 'mat:', child.material.name);
+
+        // Replace ALL materials with the test texture
+        const mat = new THREE.MeshBasicMaterial({
+            map: testTexture,
+            side: THREE.DoubleSide,
+        });
+        child.material = mat;
+        screenMaterials.push(mat);
+    });
+});
+
+// Drag & drop video/image
+function setTexture(tex) {
+    screenMaterials.forEach(m => { m.map = tex; m.needsUpdate = true; });
+}
+
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+
+    if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.play();
+        const tex = new THREE.VideoTexture(video);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false;
+        setTexture(tex);
+    } else if (file.type.startsWith('image/')) {
+        const img = new Image();
+        img.onload = () => {
+            const tex = new THREE.Texture(img);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.flipY = false;
+            tex.needsUpdate = true;
+            setTexture(tex);
+        };
+        img.src = URL.createObjectURL(file);
+    }
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
